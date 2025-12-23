@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Italian Demographics Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+      html, body { margin: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: #f4f4f9; }
+      body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+      #page-title {
+        background-color: #2c3e50; color: white; padding: 15px 24px;
+        font-size: 22px; font-weight: 600; display: flex;
+        justify-content: space-between; align-items: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 10;
+      }
+
+      #status-indicator { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #e74c3c; margin-left: 15px; }
+
+      #main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
+      #map-section { flex: 1; position: relative; border-right: 1px solid #ddd; min-width: 0; }
+      #map { width: 100%; height: 100%; background: #e0e0e0; }
+
+      .map-overlay {
+        position: absolute; bottom: 30px; left: 20px;
+        background: rgba(255, 255, 255, 0.95); padding: 15px;
+        border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 1000; width: 320px;
+      }
+      .control-group { margin-bottom: 15px; }
+      .control-group label { display: block; font-size: 12px; color: #555; margin-bottom: 5px; font-weight: bold; }
+      select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white; }
+      .slider-container { display: flex; align-items: center; gap: 10px; }
+      input[type=range] { flex: 1; }
+      #play-btn {
+        width: 30px; height: 30px; border-radius: 50%; border: none; background: #27ae60; color: white; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: background 0.2s;
+      }
+      #play-btn:hover { background: #219150; }
+
+      /* Legend Styles */
+      .legend {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        line-height: 18px;
+        color: #555;
+        width: 150px;
+      }
+      .legend-title { font-weight: bold; margin-bottom: 5px; font-size: 12px; text-transform: uppercase; }
+
+      /* DISCRETE STEPS LEGEND - COSMIC (Inverted: Light -> Dark) */
+      .legend-gradient {
+        height: 12px;
+        width: 100%;
+        margin-bottom: 5px;
+        border-radius: 2px;
+        border: 1px solid #bbb;
+        background: linear-gradient(to right,
+            #fcffa4 0%, #fcffa4 11%,
+            #f6d746 11%, #f6d746 22%,
+            #fca50a 22%, #fca50a 33%,
+            #dd513a 33%, #dd513a 44%,
+            #932667 44%, #932667 55%,
+            #6a256b 55%, #6a256b 66%,
+            #420a68 66%, #420a68 77%,
+            #260c4e 77%, #260c4e 88%,
+            #120d31 88%, #120d31 100%
+        );
+      }
+      .legend-labels { display: flex; justify-content: space-between; font-size: 11px; color: #333; }
+
+      /* Sidebar Structure */
+      #sidebar-wrapper {
+        width: 800px; background: #f8f9fa; display: flex; flex-direction: column;
+        position: relative; overflow: hidden; flex-shrink: 0; border-left: 1px solid #ddd;
+        box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+      }
+
+      .sidebar-panel {
+        position: absolute; top: 0; left: 0; bottom: 0; right: 0; width: 100%; height: 100%;
+        padding: 20px; box-sizing: border-box; overflow-y: auto; background: white;
+        display: flex; flex-direction: column;
+        transform: translateX(0);
+        z-index: 10;
+      }
+
+      .info-box { background: #e8f8f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #16a085; }
+
+      .info-box h2 { margin: 0 0 5px 0; font-size: 18px; color: #2c3e50; }
+      .info-box .stat { font-size: 24px; font-weight: bold; color: #16a085; }
+      .info-box .sub-stat { font-size: 12px; color: #7f8c8d; }
+
+      .chart-container { position: relative; height: 400px; width: 100%; margin-bottom: 25px; }
+      .radar-container { position: relative; height: 500px; width: 100%; margin-bottom: 25px; }
+      .tall-chart-container { position: relative; height: 1200px; width: 100%; margin-bottom: 25px; }
+
+      .section-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 10px; margin-bottom: 10px; }
+      .section-header h3 { margin: 0; font-size: 14px; text-transform: uppercase; color: #888; border: none; }
+      .config-btn { background: none; border: none; cursor: pointer; font-size: 16px; color: #888; padding: 0; transition: color 0.2s; }
+      .config-btn:hover { color: #2c3e50; }
+
+      .comparison-controls { display: flex; gap: 5px; margin-bottom: 10px; }
+      .comparison-controls select { font-size: 11px; padding: 4px; }
+
+      /* Modal */
+      .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
+      .modal.open { display: flex; }
+      .modal-content { background: white; padding: 20px; border-radius: 8px; width: 400px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+      .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;}
+      .checkbox-list { overflow-y: auto; flex: 1; margin: 10px 0; border: 1px solid #eee; padding: 10px; background: #fcfcfc; border-radius: 4px; }
+      .checkbox-item { display: flex; align-items: center; padding: 5px; border-bottom: 1px solid #f0f0f0; }
+      .checkbox-item:last-child { border-bottom: none; }
+      .checkbox-item input { margin-right: 10px; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+      .counter-badge { font-size: 12px; background: #eee; padding: 2px 6px; border-radius: 10px; color: #555; }
+    </style>
+  </head>
+  <body>
+
+    <div id="page-title">
+      <div style="display:flex; align-items:center;">
+        <span style="margin-right: 15px;">🏥 Italian Demographics Dashboard</span>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div id="status-indicator">Connecting...</div>
+      </div>
+    </div>
+
+    <div id="main-container">
+      <div id="map-section">
+        <div id="map"></div>
+        <div class="map-overlay">
+          <div class="control-group"><label>INDICATOR</label><select id="indicator-select"><option>Loading...</option></select></div>
+          <div class="control-group">
+            <label>YEAR: <span id="year-display">2002</span></label>
+            <div class="slider-container"><button id="play-btn">▶</button><input type="range" id="year-slider" min="2002" max="2035" value="2002" step="1"></div>
+          </div>
+          <button id="reset-btn" style="width:100%; padding:8px; margin-top:10px; cursor:pointer;">Reset View</button>
+        </div>
+      </div>
+
+      <div id="sidebar-wrapper">
+        <div id="sidebar-combined" class="sidebar-panel">
+          <div class="info-box combined-box">
+            <h2 id="region-name-combined">Italy (National)</h2>
+            <div class="stat" id="current-value-combined">--</div>
+            <div class="sub-stat" id="current-indicator-label-combined">Demographic Indicators</div>
+          </div>
+          <div class="section-header"><h3>Regional Leaderboard (<span class="dynamic-year">2002</span>)</h3></div>
+          <div class="tall-chart-container"><canvas id="leaderboardChartCombined"></canvas></div>
+          <div class="section-header"><h3>Full Timeline Analysis</h3></div>
+          <div class="chart-container"><canvas id="disparityChartCombined"></canvas></div>
+
+          <div class="section-header"><h3>Combined Comparison</h3></div>
+          <div class="comparison-controls"><select id="comp-select-1-combined"></select><select id="comp-select-2-combined"></select></div>
+          <div class="chart-container"><canvas id="comparisonChartCombined"></canvas></div>
+
+          <div class="section-header"><h3>Yearly Correlation (Comparison)</h3></div>
+          <div class="control-group" style="padding: 0 5px; margin-bottom: 5px;">
+            <label>SCATTER YEAR: <span id="scatter-year-display">2002</span></label>
+            <input type="range" id="scatter-slider" min="2002" max="2035" value="2002" step="1" style="width:100%">
+          </div>
+          <div class="chart-container"><canvas id="scatterComparisonChart"></canvas></div>
+
+          <div class="section-header"><h3>Combined Profile</h3> <button id="config-radar-btn" class="config-btn">⚙️ Configure</button></div>
+          <div class="radar-container"><canvas id="radarChartCombined"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="radar-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+            <h4 style="margin:0">Select Radar Indicators</h4>
+            <span id="selection-counter" class="counter-badge">0/12</span>
+        </div>
+        <div class="checkbox-list" id="radar-checkbox-container"></div>
+        <div class="modal-actions"><button id="modal-cancel">Cancel</button><button id="modal-apply" style="background:#27ae60; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">Apply Changes</button></div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const SERVER_BASE = "http://127.0.0.1:5000";
+
+      // --- GLOBAL STATE ---
+      let viewContext = {
+        combined: { indicators: [], years: {min:2002, max:2035}, currentYear: 2002, activeIndicator: '', activeLabel: '' }
+      };
+
+      let dataStore = {
+        combined: { trend: [], radar: [], comp1: [], comp2: [] }
+      };
+
+      let currentState = { selectedRegion: null, radarCodes: [] };
+      let playInterval = null;
+      const scope = 'combined';
+
+      // --- UTILS ---
+      function arraysEqual(a, b) {
+          if (a === b) return true;
+          if (a == null || b == null) return false;
+          if (a.length !== b.length) return false;
+          for (var i = 0; i < a.length; ++i) {
+             if (Math.abs(a[i] - b[i]) > 0.0001) return false;
+          }
+          return true;
+      }
+
+      // --- MAP SETUP ---
+      const map = L.map('map', {
+          minZoom: 6,
+          maxBounds: [[35.0, 6.0], [48.0, 19.0]],
+          maxBoundsViscosity: 1.0
+      }).setView([41.8719, 12.5674], 6);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap', subdomains: 'abcd', maxZoom: 19 }).addTo(map);
+      let geoJsonLayer;
+      let legendControl;
+
+      // --- CHART INIT ---
+      function initCharts(suffix, colorTheme) {
+        charts[`disparity${suffix}`] = new Chart(document.getElementById(`disparityChart${suffix}`), {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive:true,
+                maintainAspectRatio:false,
+                scales: { x:{grid:{display:false}}, y:{beginAtZero:true}},
+                plugins: { legend: { labels: { filter: (item) => !['Min', 'Max'].includes(item.text) } } }
+            }
+        });
+
+        charts[`comparison${suffix}`] = new Chart(document.getElementById(`comparisonChart${suffix}`), {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Ind 1', data: [], borderColor: '#9b59b6', yAxisID: 'y', tension:0.1 }, { label: 'Ind 2', data: [], borderColor: '#2ecc71', yAxisID: 'y1', tension:0.1 }] },
+            options: {
+                responsive:true,
+                maintainAspectRatio:false,
+                scales: {
+                    y:{position:'left', beginAtZero: true},
+                    y1:{position:'right', beginAtZero: true, grid:{drawOnChartArea:false}}
+                }
+            }
+        });
+
+        charts[`scatterComparison`] = new Chart(document.getElementById(`scatterComparisonChart`), {
+            type: 'scatter',
+            data: { datasets: [{ label: 'Region Data', data: [], backgroundColor: '#8e44ad' }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: 'Indicator 1' }, min: 0 },
+                    y: { title: { display: true, text: 'Indicator 2' }, min: 0 }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.raw.region + ': (' + context.raw.x + ', ' + context.raw.y + ')';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        charts[`radar${suffix}`] = new Chart(document.getElementById(`radarChart${suffix}`), {
+            type: 'radar',
+            data: { labels: [], datasets: [] },
+            options: { responsive:true, maintainAspectRatio:false, scales: { r: { min:0, ticks:{display:false} } } }
+        });
+
+        charts[`leaderboard${suffix}`] = new Chart(document.getElementById(`leaderboardChart${suffix}`), {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Value', data: [], backgroundColor: '#95a5a6' }] },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                plugins: { legend: {display:false} },
+                scales: { x: { ticks: { autoSkip: false, maxRotation: 90, minRotation: 90 } } },
+                onClick: (evt, elements) => {
+                    if(elements.length > 0) {
+                        const idx = elements[0].index;
+                        const region = charts[`leaderboard${suffix}`].data.labels[idx];
+                        selectRegion(region);
+                    }
+                },
+                onHover: (e, el) => { e.native.target.style.cursor = el.length ? 'pointer' : 'default'; }
+            }
+        });
+      }
+
+      const charts = {};
+      initCharts('Combined', '#16a085');
+
+      // --- INITIALIZATION ---
+      async function init() {
+        await initMap();
+        await fetchContext(scope, -1);
+        fetchTrendData(scope, -1);
+        fetchRadarData(scope, -1);
+        fetchComparisonData(scope, -1);
+        updateSharedControls(scope);
+        document.getElementById('status-indicator').innerText = "Connected";
+        document.getElementById('status-indicator').style.background = "#27ae60";
+      }
+
+      // --- FETCHING ---
+      async function fetchContext(scope, predVal) {
+          try {
+              const res = await fetch(`${SERVER_BASE}/indicators?pred=${predVal}`);
+              const json = await res.json();
+              if(json.status === 'success') {
+                  viewContext[scope].indicators = json.indicators;
+                  viewContext[scope].years = json.years;
+
+                  if(json.indicators.length > 0) {
+                      viewContext[scope].activeIndicator = json.indicators[0].code;
+                      viewContext[scope].activeLabel = json.indicators[0].label;
+
+                      const html = json.indicators.map(i => `<option value="${i.code}">${i.label}</option>`).join('');
+                      const suffix = 'Combined';
+                      const el1 = document.getElementById(`comp-select-1-${suffix.toLowerCase()}`);
+                      const el2 = document.getElementById(`comp-select-2-${suffix.toLowerCase()}`);
+                      if(el1 && el2) { el1.innerHTML = html; el2.innerHTML = html; el2.selectedIndex = 1; }
+                  }
+                  viewContext[scope].currentYear = 2002;
+                  currentState.radarCodes = json.indicators.slice(0,6).map(i=>i.code);
+              }
+          } catch(e) { console.error("Context Error", e); }
+      }
+
+      async function fetchTrendData(scope, predVal) {
+        const ind = viewContext[scope].activeIndicator;
+        if(!ind) return;
+        try {
+          const url = new URL(`${SERVER_BASE}/query`);
+          url.searchParams.append('indicator', ind);
+          url.searchParams.append('pred', predVal);
+          const res = await fetch(url);
+          const json = await res.json();
+          if (json.status === 'success') {
+            dataStore[scope].trend = json.data;
+            updateTimeBounds(scope);
+            // UPDATED: Call updateDisparityChart only on data fetch (indicator change)
+            updateDisparityChart(scope);
+            updateUI(scope);
+          }
+        } catch (e) { console.error(e); }
+      }
+
+      async function fetchRadarData(scope, predVal) {
+        try {
+          const url = new URL(`${SERVER_BASE}/yearly_data`);
+          url.searchParams.append('year', viewContext[scope].currentYear);
+          url.searchParams.append('pred', predVal);
+          const res = await fetch(url);
+          const json = await res.json();
+          if (json.status === 'success') {
+             dataStore[scope].radar = json.data;
+             updateRadarChart(scope);
+             updateLeaderboardChart(scope);
+          }
+        } catch(e) { console.error(e); }
+      }
+
+      async function fetchComparisonData(scope, predVal) {
+         const suffix = 'Combined';
+         const sfxId = '-'+suffix.toLowerCase();
+         const i1 = document.getElementById(`comp-select-1${sfxId}`).value;
+         const i2 = document.getElementById(`comp-select-2${sfxId}`).value;
+
+         const u1 = new URL(`${SERVER_BASE}/query`); u1.searchParams.append('indicator', i1); u1.searchParams.append('pred', predVal);
+         const u2 = new URL(`${SERVER_BASE}/query`); u2.searchParams.append('indicator', i2); u2.searchParams.append('pred', predVal);
+
+         const [r1, r2] = await Promise.all([fetch(u1), fetch(u2)]);
+         const j1 = await r1.json(); const j2 = await r2.json();
+
+         if (j1.status === 'success') dataStore[scope].comp1 = j1.data;
+         if (j2.status === 'success') dataStore[scope].comp2 = j2.data;
+
+         updateComparisonChart(scope);
+         updateScatterComparisonChart(scope);
+      }
+
+      // --- PLAYBACK ---
+      function togglePlay() {
+          if (playInterval) stopPlay();
+          else startPlay();
+      }
+
+      function stopPlay() {
+          if(playInterval) { clearInterval(playInterval); playInterval = null; }
+          document.getElementById('play-btn').innerText = "▶";
+      }
+
+      function startPlay() {
+          const btn = document.getElementById('play-btn');
+          const slider = document.getElementById('year-slider');
+          const ctx = viewContext[scope];
+          const max = parseInt(slider.max);
+          const min = parseInt(slider.min);
+
+          if (ctx.currentYear >= max) {
+              ctx.currentYear = min;
+              slider.value = min;
+              fetchRadarData(scope, -1);
+              updateUI(scope);
+          }
+
+          btn.innerText = "⏸";
+
+          playInterval = setInterval(() => {
+             const currentMax = parseInt(document.getElementById('year-slider').max);
+             if (ctx.currentYear < currentMax) {
+                 ctx.currentYear++;
+                 document.getElementById('year-slider').value = ctx.currentYear;
+                 document.getElementById('year-display').innerText = ctx.currentYear;
+                 fetchRadarData(scope, -1);
+                 updateUI(scope);
+             } else {
+                 stopPlay();
+             }
+          }, 1000);
+      }
+
+      function updateTimeBounds(scope) {
+          const data = dataStore[scope].trend;
+          const region = currentState.selectedRegion;
+          const ctx = viewContext[scope];
+          const slider = document.getElementById('year-slider');
+
+          let min = ctx.years.min;
+          let max = ctx.years.max;
+
+          if (data && data.length > 0) {
+              let relevantData = data;
+              if (region) {
+                  relevantData = data.filter(d => d.region.toLowerCase().includes(region.toLowerCase()));
+              }
+              if (relevantData.length > 0) {
+                  const years = relevantData.map(d => d.year);
+                  min = Math.min(...years);
+                  max = Math.max(...years);
+              }
+          }
+
+          slider.min = min;
+          slider.max = max;
+
+          // Also update the Scatter Slider limits
+          const scatterSlider = document.getElementById('scatter-slider');
+          if (scatterSlider) {
+            scatterSlider.min = min;
+            scatterSlider.max = max;
+          }
+
+          let val = ctx.currentYear;
+          if (val < min) val = min;
+          if (val > max) val = max;
+
+          if (val !== ctx.currentYear) {
+              ctx.currentYear = val;
+              document.getElementById('year-display').innerText = val;
+              fetchRadarData(scope, -1);
+          }
+          slider.value = ctx.currentYear;
+      }
+
+      function updateSharedControls(scope) {
+          const ctx = viewContext[scope];
+          const select = document.getElementById('indicator-select');
+          select.innerHTML = '';
+          ctx.indicators.forEach(ind => {
+              const opt = new Option(ind.label, ind.code);
+              if(ind.code === ctx.activeIndicator) opt.selected = true;
+              select.add(opt);
+          });
+          const slider = document.getElementById('year-slider');
+          slider.value = ctx.currentYear;
+          document.getElementById('year-display').innerText = ctx.currentYear;
+          document.querySelectorAll(`.dynamic-year`).forEach(el => el.innerText = ctx.currentYear);
+          updateUI(scope);
+      }
+
+      function updateUI(scope) {
+         const suffix = 'Combined';
+         const sfxId = '-'+suffix.toLowerCase();
+         const ctx = viewContext[scope];
+         const data = dataStore[scope].trend;
+
+         document.getElementById(`region-name${sfxId}`).innerText = currentState.selectedRegion || "National Average";
+         document.getElementById(`current-indicator-label${sfxId}`).innerText = "Demographic Indicators";
+         document.querySelectorAll(`.dynamic-year`).forEach(el => el.innerText = ctx.currentYear);
+
+         const val = getTrendValueForRegion(data, currentState.selectedRegion, ctx.currentYear);
+         document.getElementById(`current-value${sfxId}`).innerText = val !== null ? val : '--';
+
+         // UPDATED: Removed updateDisparityChart from here to prevent refresh on slider move.
+
+         updateComparisonChart(scope);
+         updateScatterComparisonChart(scope);
+         updateMapColors(data, ctx.currentYear);
+      }
+
+      function updateDisparityChart(scope) {
+          const suffix = 'Combined';
+          const chart = charts[`disparity${suffix}`];
+          const data = dataStore[scope].trend;
+          if(!data.length) return;
+          const years = [...new Set(data.map(d => d.year))].sort((a,b)=>a-b);
+          const minD=[], maxD=[], avgD=[], regD=[];
+          years.forEach(y => {
+             const vals = data.filter(d => d.year === y).map(d => d.value);
+             if(vals.length) {
+                 minD.push(Math.min(...vals));
+                 maxD.push(Math.max(...vals));
+                 avgD.push(vals.reduce((a,b)=>a+b,0)/vals.length);
+             } else {
+                 minD.push(null); maxD.push(null); avgD.push(null);
+             }
+             regD.push(getTrendValueForRegion(data, currentState.selectedRegion, y));
+          });
+
+          const datasets = [
+              { label: 'Max', data: maxD, borderColor: 'transparent', backgroundColor: '#16a08533', fill: '+1', pointRadius:0, order:3 },
+              { label: 'Min', data: minD, borderColor: 'transparent', fill: false, pointRadius:0, order:4 },
+              { label: 'Avg', data: avgD, borderColor: '#e67e22', borderDash:[5,5], fill:false, pointRadius:1, order:2 }
+          ];
+
+          if (currentState.selectedRegion) {
+              const regDataset = {
+                  label: currentState.selectedRegion,
+                  data: regD,
+                  borderColor: '#16a085',
+                  backgroundColor: '#16a085',
+                  fill: false, pointRadius:3, order:1
+              };
+
+              if (!arraysEqual(avgD, regD)) {
+                  datasets.push(regDataset);
+              }
+          }
+
+          chart.data.labels = years;
+          chart.data.datasets = datasets;
+          chart.update();
+      }
+
+      function updateComparisonChart(scope) {
+          const suffix = 'Combined';
+          const chart = charts[`comparison${suffix}`];
+          const d1 = dataStore[scope].comp1; const d2 = dataStore[scope].comp2;
+          if(!d1.length || !d2.length) return;
+          const years = [...new Set([...d1.map(d=>d.year), ...d2.map(d=>d.year)])].sort((a,b)=>a-b);
+
+          const data1 = years.map(y => getTrendValueForRegion(d1, currentState.selectedRegion, y));
+          const data2 = years.map(y => getTrendValueForRegion(d2, currentState.selectedRegion, y));
+
+          chart.data.labels = years;
+          chart.data.datasets[0].data = data1;
+          chart.data.datasets[1].data = data2;
+
+          const sfxId = '-'+suffix.toLowerCase();
+          const sel1 = document.getElementById(`comp-select-1${sfxId}`);
+          const sel2 = document.getElementById(`comp-select-2${sfxId}`);
+          chart.data.datasets[0].label = sel1.options[sel1.selectedIndex]?.text || 'Ind 1';
+          chart.data.datasets[1].label = sel2.options[sel2.selectedIndex]?.text || 'Ind 2';
+
+          if (arraysEqual(data1, data2)) {
+             chart.data.datasets[1].hidden = true;
+          } else {
+             chart.data.datasets[1].hidden = false;
+          }
+
+          chart.update();
+      }
+
+      function updateScatterComparisonChart(scope) {
+          const chart = charts['scatterComparison'];
+          const slider = document.getElementById('scatter-slider');
+          const year = parseInt(slider.value);
+          document.getElementById('scatter-year-display').innerText = year;
+
+          const d1 = dataStore[scope].comp1;
+          const d2 = dataStore[scope].comp2;
+
+          if(!d1.length || !d2.length) return;
+
+          const max1 = Math.max(...d1.map(d => d.value));
+          const max2 = Math.max(...d2.map(d => d.value));
+
+          // Fixed Axis (Inverted: X=Ind2, Y=Ind1)
+          chart.options.scales.x.max = max2 * 1.1;
+          chart.options.scales.y.max = max1 * 1.1;
+
+          const d1Year = d1.filter(d => d.year === year);
+          const d2Year = d2.filter(d => d.year === year);
+
+          let pts = [];
+          const regions = [...new Set(d1Year.map(d => d.region))];
+
+          regions.forEach(reg => {
+              const item1 = d1Year.find(d => d.region === reg);
+              const item2 = d2Year.find(d => d.region === reg);
+
+              if (item1 && item2 && item1.value != null && item2.value != null) {
+                  pts.push({
+                      x: item2.value,
+                      y: item1.value,
+                      region: reg
+                  });
+              }
+          });
+
+          if (currentState.selectedRegion) {
+             pts = pts.filter(p => p.region.toLowerCase().includes(currentState.selectedRegion.toLowerCase()));
+          }
+
+          chart.data.datasets[0].data = pts;
+
+          const sfxId = '-combined';
+          const sel1 = document.getElementById(`comp-select-1${sfxId}`);
+          const sel2 = document.getElementById(`comp-select-2${sfxId}`);
+
+          chart.options.scales.x.title.text = sel2.options[sel2.selectedIndex]?.text || 'Ind 2';
+          chart.options.scales.y.title.text = sel1.options[sel1.selectedIndex]?.text || 'Ind 1';
+
+          chart.update();
+      }
+
+      function updateLeaderboardChart(scope) {
+          const suffix = 'Combined';
+          const chart = charts[`leaderboard${suffix}`];
+          const ind = viewContext[scope].activeIndicator;
+          let chartData = [];
+
+          if (dataStore[scope].radar) {
+            chartData = dataStore[scope].radar.filter(d => d.data_type === ind);
+          }
+
+          const uniqueRegions = new Map();
+          chartData.forEach(item => {
+              if (!uniqueRegions.has(item.region)) {
+                  uniqueRegions.set(item.region, item);
+              }
+          });
+          chartData = Array.from(uniqueRegions.values());
+
+          chartData.sort((a,b) => b.value - a.value);
+
+          chart.data.labels = chartData.map(d => d.region);
+          chart.data.datasets[0].data = chartData.map(d => d.value);
+          chart.data.datasets[0].backgroundColor = chartData.map(d => (currentState.selectedRegion && d.region.toLowerCase().includes(currentState.selectedRegion.toLowerCase())) ? '#16a085' : '#95a5a6');
+          chart.update();
+      }
+
+      function updateRadarChart(scope) {
+          const suffix = 'Combined';
+          const chart = charts[`radar${suffix}`];
+          const rawData = dataStore[scope].radar;
+
+          const curInds = viewContext[scope].indicators.filter(i => currentState.radarCodes.includes(i.code));
+          const effectiveInds = curInds.length > 0 ? curInds : viewContext[scope].indicators.slice(0,6);
+
+          const labels=[], avgs=[], regs=[];
+          effectiveInds.forEach(ind => {
+              labels.push(ind.label.substring(0,10)+'..');
+              const vals = rawData.filter(d => d.data_type === ind.code).map(d => d.value);
+              if(!vals.length) { avgs.push(0); regs.push(0); return; }
+              const min=Math.min(...vals), max=Math.max(...vals), rng=max-min||1;
+              const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+              avgs.push((avg-min)/rng);
+              const regVal = rawData.find(d => d.data_type === ind.code && d.region.toLowerCase().includes((currentState.selectedRegion||'').toLowerCase()))?.value;
+              regs.push(regVal != null ? (regVal-min)/rng : 0);
+          });
+
+          const avgDataset = { label: 'Avg', data: avgs, borderColor: '#e67e22', backgroundColor: '#e67e2233', borderWidth:2 };
+          const datasets = [avgDataset];
+
+          if (currentState.selectedRegion) {
+              const regDataset = {
+                  label: currentState.selectedRegion,
+                  data: regs,
+                  borderColor: '#16a085',
+                  backgroundColor: '#16a08533',
+                  borderWidth:2
+              };
+              if (!arraysEqual(avgs, regs)) {
+                 datasets.push(regDataset);
+              }
+          }
+
+          chart.data.labels = labels;
+          chart.data.datasets = datasets;
+          chart.update();
+      }
+
+      function getTrendValueForRegion(dataset, region, year) {
+          if(!dataset || !dataset.length) return null;
+          if(region) {
+              const r = dataset.find(d => d.year == year && d.region.toLowerCase().includes(region.toLowerCase()));
+              return r ? r.value : null;
+          } else {
+              const rs = dataset.filter(d => d.year == year);
+              return rs.length ? (rs.reduce((a,b)=>a+b.value,0)/rs.length).toFixed(1) : null;
+          }
+      }
+
+      function getColor(d) {
+          if (d > 0.88) return '#120d31';
+          if (d > 0.77) return '#260c4e';
+          if (d > 0.66) return '#420a68';
+          if (d > 0.55) return '#6a256b';
+          if (d > 0.44) return '#932667';
+          if (d > 0.33) return '#dd513a';
+          if (d > 0.22) return '#fca50a';
+          if (d > 0.11) return '#f6d746';
+          return '#fcffa4';
+      }
+
+      function updateMapColors(dataset, year) {
+         if(!geoJsonLayer) return;
+
+         const allValues = dataset.map(d => d.value);
+         const minGlobal = allValues.length ? Math.min(...allValues) : 0;
+         const maxGlobal = allValues.length ? Math.max(...allValues) : 0;
+
+         const logMin = 0;
+         const logMax = Math.log(maxGlobal - minGlobal + 1);
+
+         if(legendControl) {
+             const div = legendControl.getContainer();
+             div.innerHTML = `
+                <div class="legend-title">Intensity (Log Scale)</div>
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                  <span>${minGlobal.toFixed(1)}</span>
+                  <span>${maxGlobal.toFixed(1)}</span>
+                </div>
+             `;
+         }
+
+         geoJsonLayer.eachLayer(layer => {
+             const name = layer.feature.properties.reg_name;
+             const val = getTrendValueForRegion(dataset, name, year);
+
+             let col = '#ccc';
+             if (val != null) {
+                 const logVal = Math.log(val - minGlobal + 1);
+                 let norm = (logVal - logMin) / (logMax - logMin || 1);
+                 if(norm < 0) norm = 0;
+                 if(norm > 1) norm = 1;
+                 col = getColor(norm);
+             }
+
+             layer.setStyle({ fillColor: col });
+             layer.bindTooltip(`<strong>${name}</strong><br>Val: ${val||'N/A'}`);
+         });
+      }
+
+      async function initMap() {
+        const res = await fetch('https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_IT_regions.geojson');
+        const data = await res.json();
+        geoJsonLayer = L.geoJson(data, {
+          style: { fillColor:'#ccc', weight:1, opacity:1, color:'white', dashArray:'3', fillOpacity:0.7 },
+          onEachFeature: (f, l) => { l.on('click', (e) => selectRegion(f.properties.reg_name || f.properties.reg_istat_code_num)); }
+        }).addTo(map);
+
+        legendControl = L.control({position: 'bottomright'});
+        legendControl.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = '<div class="legend-title">Intensity</div><div class="legend-gradient"></div><div class="legend-labels"><span>Min</span><span>Max</span></div>';
+            return div;
+        };
+        legendControl.addTo(map);
+      }
+
+      function selectRegion(name) {
+          currentState.selectedRegion = name;
+          if(geoJsonLayer) {
+              geoJsonLayer.resetStyle();
+              let regionLayer = null;
+              geoJsonLayer.eachLayer(l => {
+                  const n = l.feature.properties.reg_name;
+                  if(n && name && n.toLowerCase().includes(name.toLowerCase())) {
+                      l.setStyle({ weight:3, color:'#666', dashArray:'' });
+                      l.bringToFront();
+                      regionLayer = l;
+                  }
+              });
+              if (regionLayer) {
+                  map.fitBounds(regionLayer.getBounds(), { padding: [50, 50] });
+              } else {
+                  map.setView([41.8719, 12.5674], 6); // Reset view
+              }
+          }
+          updateTimeBounds(scope);
+
+          // UPDATED: update Disparity chart here (on region select)
+          updateDisparityChart(scope);
+
+          updateUI(scope);
+          updateRadarChart(scope);
+          updateLeaderboardChart(scope);
+          updateScatterComparisonChart(scope);
+      }
+
+      // --- MODAL LOGIC FOR RADAR SELECTION ---
+      function populateRadarModal(scope) {
+          const container = document.getElementById('radar-checkbox-container');
+          container.innerHTML = '';
+          const allInds = viewContext[scope].indicators;
+          const currentSelection = currentState.radarCodes;
+          const counter = document.getElementById('selection-counter');
+
+          function updateCounter() {
+              const checkedCount = container.querySelectorAll('input[type="checkbox"]:checked').length;
+              counter.innerText = `${checkedCount}/12 Selected`;
+              counter.style.background = checkedCount > 12 ? '#ffdddd' : '#eee';
+              counter.style.color = checkedCount > 12 ? 'red' : '#555';
+          }
+
+          allInds.forEach(ind => {
+              const div = document.createElement('div');
+              div.className = 'checkbox-item';
+
+              const cb = document.createElement('input');
+              cb.type = 'checkbox';
+              cb.value = ind.code;
+              cb.checked = currentSelection.includes(ind.code);
+
+              const lbl = document.createElement('label');
+              lbl.innerText = ind.label;
+              lbl.style.fontSize = '12px';
+              lbl.style.cursor = 'pointer';
+              lbl.onclick = () => cb.click();
+
+              cb.addEventListener('change', () => {
+                   const checkedCount = container.querySelectorAll('input[type="checkbox"]:checked').length;
+                   if (checkedCount > 12) {
+                       cb.checked = false; // Prevent selection
+                       alert("You can select a maximum of 12 indicators.");
+                   }
+                   updateCounter();
+              });
+
+              div.appendChild(cb);
+              div.appendChild(lbl);
+              container.appendChild(div);
+          });
+          updateCounter();
+      }
+
+      document.getElementById('indicator-select').addEventListener('change', (e) => {
+          const newCode = e.target.value;
+          const ind = viewContext[scope].indicators.find(i => i.code === newCode);
+          if(ind) {
+              viewContext[scope].activeIndicator = newCode;
+              viewContext[scope].activeLabel = ind.label;
+              fetchTrendData(scope, -1);
+          }
+      });
+
+      const suffix = 'Combined';
+      const sfxId = '-'+suffix.toLowerCase();
+      document.getElementById(`comp-select-1${sfxId}`).addEventListener('change', () => fetchComparisonData(scope, -1));
+      document.getElementById(`comp-select-2${sfxId}`).addEventListener('change', () => fetchComparisonData(scope, -1));
+
+      const slider = document.getElementById('year-slider');
+      slider.addEventListener('input', (e) => {
+         stopPlay();
+         const val = parseInt(e.target.value);
+         viewContext[scope].currentYear = val;
+         document.getElementById('year-display').innerText = val;
+         fetchRadarData(scope, -1);
+         updateUI(scope);
+      });
+
+      document.getElementById('scatter-slider').addEventListener('input', (e) => {
+          updateScatterComparisonChart(scope);
+      });
+
+      document.getElementById('play-btn').addEventListener('click', togglePlay);
+      document.getElementById('reset-btn').addEventListener('click', () => selectRegion(null));
+
+      document.getElementById('config-radar-btn').addEventListener('click', () => {
+          populateRadarModal(scope);
+          document.getElementById('radar-modal').classList.add('open');
+      });
+
+      document.getElementById('modal-cancel').addEventListener('click', () => {
+          document.getElementById('radar-modal').classList.remove('open');
+      });
+
+      document.getElementById('modal-apply').addEventListener('click', () => {
+          const container = document.getElementById('radar-checkbox-container');
+          const checkedBoxes = container.querySelectorAll('input[type="checkbox"]:checked');
+          const selectedCodes = Array.from(checkedBoxes).map(cb => cb.value);
+
+          currentState.radarCodes = selectedCodes;
+          updateRadarChart(scope);
+          document.getElementById('radar-modal').classList.remove('open');
+      });
+
+      init();
+    </script>
+  </body>
+</html>
