@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Italian Demographics - Complete Analytics Suite</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --primary-bg: #f4f6f8;
+            --card-bg: #ffffff;
+            --header-bg: #2c3e50;
+            --text-main: #333;
+            --accent: #3498db;
+            --border-radius: 8px;
+            --pcp-line: rgba(52, 152, 219, 0.3);
+            --pcp-selected: #e74c3c;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0; background-color: var(--primary-bg);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            color: white; padding: 0 15px; height: 40px;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 42% 58%;
+            gap: 8px; padding: 8px;
+            height: calc(100vh - 40px);
+            box-sizing: border-box;
+        }
+
+        .col { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 10px; display: flex; flex-direction: column;
+            min-height: 0;
+        }
+
+        .card-header {
+            font-size: 0.7rem; font-weight: 700; color: var(--header-bg);
+            border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 3px;
+            text-transform: uppercase;
+        }
+
+        /* Layout Ratios */
+        .map-wrapper { flex: 1.5; }
+        .cluster-wrapper { flex: 1; }
+        .pcp-wrapper { flex: 1; }
+        .bubble-wrapper { flex: 1; }
+        .stats-wrapper { flex: 1.2; overflow: hidden; }
+
+        .chart-container { flex-grow: 1; position: relative; width: 100%; height: 100%; }
+        
+        /* Table Styling per Schizzo */
+        .table-scroll { overflow-y: auto; flex-grow: 1; border: 1px solid #f0f0f0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th { background: #f8f9fa; border: 1px solid #dee2e6; padding: 6px; position: sticky; top: 0; }
+        td { border: 1px solid #eee; padding: 6px; text-align: center; }
+        
+        .col-selected-regions { background: #ebf5fb; font-weight: bold; width: 110px; text-align: left; }
+        
+        .pcp-svg { width: 100%; height: 100%; }
+        .pcp-axis { stroke: #ddd; stroke-width: 1; }
+        .axis-label { fill: #999; font-size: 8px; text-anchor: middle; font-weight: bold; }
+        .pcp-path { fill: none; stroke-width: 1.2; }
+
+        #italyMap { width: 100%; height: 100%; border-radius: 4px; }
+        .btn-update { background: var(--accent); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="font-weight:600; font-size: 0.9rem;">Italian Demographics Dashboard</div>
+        <button class="btn-update" onclick="randomizeData()">Update All Modules</button>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="col">
+            <div class="card map-wrapper">
+                <div class="card-header">Geospatial Distribution</div>
+                <div id="italyMap"></div>
+            </div>
+            <div class="card cluster-wrapper">
+                <div class="card-header">Clustering View (t-SNE)</div>
+                <div class="chart-container"><canvas id="clusterChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card pcp-wrapper">
+                <div class="card-header">Multivariate Profile (PCP)</div>
+                <div class="chart-container"><svg id="pcpSvg" class="pcp-svg"></svg></div>
+            </div>
+
+            <div class="card bubble-wrapper">
+                <div class="card-header">Correlation Analysis (Income vs Health)</div>
+                <div class="chart-container"><canvas id="bubbleChart"></canvas></div>
+            </div>
+
+            <div class="card stats-wrapper">
+                <div class="card-header">Top K Diverse Variables per Selected Group</div>
+                <div class="table-scroll">
+                    <table>
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const regions = [
+            { name: "Lombardia", lat: 45.46, lng: 9.19 },
+            { name: "Piemonte", lat: 45.07, lng: 7.68 },
+            { name: "Veneto", lat: 45.44, lng: 12.31 },
+            { name: "Lazio", lat: 41.90, lng: 12.49 },
+            { name: "Campania", lat: 40.85, lng: 14.26 },
+            { name: "Sicilia", lat: 37.59, lng: 14.01 },
+            { name: "Toscana", lat: 43.76, lng: 11.25 },
+            { name: "Puglia", lat: 41.11, lng: 16.87 }
+        ];
+
+        const features = ['Income', 'Health', 'Education', 'Environment', 'Jobs'];
+        const map = L.map('italyMap').setView([42.0, 12.5], 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+        const mapLayer = L.layerGroup().addTo(map);
+
+        const clusterChart = new Chart(document.getElementById('clusterChart'), {
+            type: 'scatter',
+            data: { datasets: [{ label: 'Clusters', data: [], backgroundColor: '#3498db' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+        const bubbleChart = new Chart(document.getElementById('bubbleChart'), {
+            type: 'bubble',
+            data: { datasets: [{ label: 'Regions', data: [], backgroundColor: 'rgba(231, 76, 60, 0.5)' }] },
+            options: { 
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { title: { display: true, text: 'Income', font: { size: 10 } } }, y: { title: { display: true, text: 'Health', font: { size: 10 } } } },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        function renderPCP(data) {
+            const svg = document.getElementById('pcpSvg');
+            svg.innerHTML = '';
+            const w = svg.clientWidth, h = svg.clientHeight;
+            if (w === 0) return;
+            const pad = { t: 25, r: 35, b: 15, l: 35 };
+            const xStep = (w - pad.l - pad.r) / (features.length - 1);
+
+            data.forEach(r => {
+                let d = `M ${pad.l} ${h - pad.b - (r[features[0]] * (h - pad.t - pad.b))}`;
+                features.slice(1).forEach((f, i) => {
+                    d += ` L ${pad.l + (i + 1) * xStep} ${h - pad.b - (r[f] * (h - pad.t - pad.b))}`;
+                });
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", d);
+                path.setAttribute("class", "pcp-path");
+                path.setAttribute("stroke", r.isSelected ? "var(--pcp-selected)" : "var(--pcp-line)");
+                path.setAttribute("stroke-opacity", r.isSelected ? "1" : "0.2");
+                svg.appendChild(path);
+            });
+
+            features.forEach((f, i) => {
+                const x = pad.l + i * xStep;
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", x); line.setAttribute("y1", pad.t);
+                line.setAttribute("x2", x); line.setAttribute("y2", h - pad.b);
+                line.setAttribute("class", "pcp-axis");
+                svg.appendChild(line);
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", x); text.setAttribute("y", pad.t - 8);
+                text.setAttribute("class", "axis-label");
+                text.textContent = f;
+                svg.appendChild(text);
+            });
+        }
+
+        function randomizeData() {
+            mapLayer.clearLayers();
+            const selectedIndices = [0, 1, 3]; 
+            const dataSet = regions.map((r, i) => {
+                const vals = {};
+                features.forEach(f => vals[f] = Math.random());
+                return { ...r, ...vals, isSelected: selectedIndices.includes(i) };
+            });
+
+            dataSet.forEach(r => {
+                L.circleMarker([r.lat, r.lng], { 
+                    radius: 6, color: r.isSelected ? '#e74c3c' : '#bdc3c7', fillOpacity: 0.8 
+                }).addTo(mapLayer);
+            });
+
+            renderPCP(dataSet);
+            updateTable(dataSet);
+
+            clusterChart.data.datasets[0].data = dataSet.map(r => ({ x: r.Income, y: r.Education }));
+            clusterChart.update();
+
+            bubbleChart.data.datasets[0].data = dataSet.map(r => ({ x: r.Income * 100, y: r.Health * 100, r: r.Jobs * 15 }));
+            bubbleChart.update();
+        }
+
+        function updateTable(data) {
+            const selected = data.filter(d => d.isSelected);
+            const others = data.filter(d => !d.isSelected);
+            const head = document.getElementById('tableHead');
+            const body = document.getElementById('tableBody');
+
+            const diverged = features.map(f => {
+                const avgSel = selected.reduce((a, b) => a + b[f], 0) / selected.length;
+                const avgOth = others.reduce((a, b) => a + b[f], 0) / others.length;
+                return { name: f, gap: Math.abs(avgSel - avgOth) };
+            }).sort((a, b) => b.gap - a.gap);
+
+            let hHtml = `<tr><th class="col-selected-regions">SELECTED REGIONS</th>`;
+            diverged.forEach(f => hHtml += `<th>${f.name}</th>`);
+            hHtml += `</tr>`;
+            head.innerHTML = hHtml;
+
+            let bHtml = '';
+            selected.forEach(r => {
+                bHtml += `<tr><td class="col-selected-regions">${r.name}</td>`;
+                diverged.forEach(f => {
+                    bHtml += `<td>${r[f.name].toFixed(2)}</td>`;
+                });
+                bHtml += `</tr>`;
+            });
+            body.innerHTML = bHtml;
+        }
+
+        window.addEventListener('resize', () => {
+            map.invalidateSize();
+            randomizeData();
+        });
+        
+        randomizeData();
+    </script>
+</body>
+</html>
