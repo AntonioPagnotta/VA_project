@@ -69,7 +69,7 @@
         .bubble-wrapper { flex: 1; }
         .stats-wrapper { flex: 1.2; overflow: hidden; }
 
-        .chart-container { flex-grow: 1; position: relative; width: 100%; height: 100%; }
+        .chart-container { flex-grow: 1; position: relative; width: 100%; min-height: 0; }
         
         /* Controls */
         .cluster-controls {
@@ -109,14 +109,11 @@
 
         /* Temporal controls */
         .temporal-controls {
-            position: absolute;
-            bottom: 5px;
-            left: 10px;
-            right: 10px;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(240, 245, 250, 0.98);
             border-radius: 4px;
-            padding: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            padding: 5px 8px;
+            margin-bottom: 5px;
+            border: 1px solid #e0e0e0;
             display: none;
         }
 
@@ -276,26 +273,26 @@
                         </label>
                     </div>
                 </div>
+                <div id="temporal-controls" class="temporal-controls">
+                    <div class="playback-controls">
+                        <button class="btn-mini" onclick="playAnimation()">▶ Play</button>
+                        <button class="btn-mini" onclick="pauseAnimation()">⏸ Pause</button>
+                        <button class="btn-mini" onclick="resetAnimation()">↺ Reset</button>
+                        <select id="speed-select" class="mini-select">
+                            <option value="6000">Slow</option>
+                            <option value="3000" selected>Normal</option>
+                            <option value="1200">Fast</option>
+                            <option value="400">Very Fast</option>
+                        </select>
+                        <span class="year-display" id="year-display">2022</span>
+                    </div>
+                    <input type="range" id="timeline-slider" class="timeline-slider" 
+                           min="0" max="100" value="0" oninput="onTimelineChange()">
+                </div>
                 <div class="chart-container">
                     <canvas id="clusterChart"></canvas>
                     <div id="cluster-loading" class="loading-overlay">
                         <span>Loading clustering data...</span>
-                    </div>
-                    <div id="temporal-controls" class="temporal-controls">
-                        <div class="playback-controls">
-                            <button class="btn-mini" onclick="playAnimation()">▶ Play</button>
-                            <button class="btn-mini" onclick="pauseAnimation()">⏸ Pause</button>
-                            <button class="btn-mini" onclick="resetAnimation()">↺ Reset</button>
-                            <select id="speed-select" class="mini-select">
-                                <option value="6000">Slow</option>
-                                <option value="3000" selected>Normal</option>
-                                <option value="1200">Fast</option>
-                                <option value="400">Very Fast</option>
-                            </select>
-                            <span class="year-display" id="year-display">2022</span>
-                        </div>
-                        <input type="range" id="timeline-slider" class="timeline-slider" 
-                               min="0" max="100" value="0" oninput="onTimelineChange()">
                     </div>
                 </div>
             </div>
@@ -1382,9 +1379,12 @@
         function updateMapStyles() {
             if (!geoJsonLayer || !currentClustering) return;
             
-            // Remove existing selection layer if any
+            // Remove existing selection layers if any
             if (window.selectionLayer) {
                 map.removeLayer(window.selectionLayer);
+            }
+            if (window.selectionLayerOuter) {
+                map.removeLayer(window.selectionLayerOuter);
             }
             
             // Create features for selected regions with black border
@@ -1432,8 +1432,25 @@
                 }
             });
             
-            // Create a new layer for selected regions with black inner border
+            // Create enhanced double border for selected regions (white + black)
             if (selectedFeatures.length > 0) {
+                // Outer white border for contrast
+                window.selectionLayerOuter = L.geoJSON({
+                    type: 'FeatureCollection',
+                    features: selectedFeatures
+                }, {
+                    style: {
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        weight: 6,
+                        opacity: 1,
+                        color: '#ffffff',
+                        interactive: false
+                    },
+                    pane: 'overlayPane'
+                }).addTo(map);
+                
+                // Inner black border
                 window.selectionLayer = L.geoJSON({
                     type: 'FeatureCollection',
                     features: selectedFeatures
@@ -1441,11 +1458,10 @@
                     style: {
                         fillColor: 'transparent',
                         fillOpacity: 0,
-                        weight: 1,
+                        weight: 3,
                         opacity: 1,
-                        color: '#000',
-                        interactive: false,
-                        offset: -2
+                        color: '#000000',
+                        interactive: false
                     },
                     pane: 'overlayPane'
                 }).addTo(map);
