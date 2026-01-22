@@ -1,5 +1,4 @@
 import os
-import json
 import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -8,9 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 DATASET_FILE = 'combined_indicators_with_healthcare.csv'
-CLUSTERING_FILE = 'clustering_results.json'
 main_df = None
-clustering_data = None
 YEAR_LIMIT = 2051
 
 
@@ -41,26 +38,7 @@ def load_data():
         print(f"Critical Error: {e}")
 
 
-def load_clustering_data():
-    global clustering_data
-    try:
-        if not os.path.exists(CLUSTERING_FILE):
-            print(f"Warning: {CLUSTERING_FILE} not found. Run clustering_precompute.py first.")
-            clustering_data = {}
-            return
-        
-        with open(CLUSTERING_FILE, 'r') as f:
-            clustering_data = json.load(f)
-        
-        print(f"Clustering data loaded successfully. {len(clustering_data)} configurations available.")
-    
-    except Exception as e:
-        print(f"Error loading clustering data: {e}")
-        clustering_data = {}
-
-
 load_data()
-load_clustering_data()
 
 
 def filter_by_pred(df, pred_val):
@@ -134,182 +112,209 @@ def get_yearly_data():
         temp_df = filter_by_pred(main_df[mask], pred_val)
         
         # Include 'indicator' column if it exists
+        columns = ['region', 'data_type', 'value']
         if 'indicator' in temp_df.columns:
-            result_df = temp_df[['region', 'data_type', 'indicator', 'value']]
-        else:
-            result_df = temp_df[['region', 'data_type', 'value']]
+            columns.append('indicator')
+        
+        result_df = temp_df[columns]
 
         return jsonify({"status": "success", "data": result_df.to_dict(orient='records')})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route('/clustering', methods=['GET'])
-def get_clustering():
-    global clustering_data
-    if clustering_data is None or len(clustering_data) == 0:
-        return jsonify({
-            "status": "error", 
-            "message": "Clustering data not available. Run clustering_precompute.py first."
-        }), 500
+# ==========================================
+# CLUSTERING ENDPOINTS
+# ==========================================
 
+import json
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+
+CLUSTERING_FILE = 'clustering_results.json'
+clustering_data = {}
+
+def load_clustering_results():
+    global clustering_data
     try:
-        year = request.args.get('year', 'overall')
-        method = request.args.get('method', 'pca')  # pca or tsne
-        clustering = request.args.get('clustering', 'kmeans')  # kmeans or spectral
-        
-        # Build key
-        key = f"{year}_{method}_{clustering}"
-        
-        if key not in clustering_data:
-            return jsonify({
-                "status": "error",
-                "message": f"Configuration not found: {key}"
-            }), 404
-        
-        result = clustering_data[key]
-        
-        return jsonify({
-            "status": "success",
-            **result
-        })
-    
+        if os.path.exists(CLUSTERING_FILE):
+            with open(CLUSTERING_FILE, 'r') as f:
+                clustering_data = json.load(f)
+            print("Clustering results loaded successfully.")
+        else:
+            print(f"Warning: {CLUSTERING_FILE} not found.")
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        print(f"Error loading clustering results: {e}")
+
+# Load clustering data on startup
+load_clustering_results()
 
 
-@app.route('/clustering_timeseries', methods=['GET'])
-def get_clustering_timeseries():
+def perform_clustering_with_k(year, method='pca', clustering='kmeans', k=None):
+    """
+    Perform clustering on-the-fly with a specific K value.
+    Returns a dict with regions, points, clusters, k_optimal (which will be k_used in this case)
+    """
+    global main_df
+    
+    if main_df is None:
+        raise Exception("Data not loaded")
+    
+    # Get data for the specified year
+    year_val = int(year) if year != 'overall' else None
+    
+    if year_val:
+        year_data = main_df[main_df['year'] == year_val]
+    else:
+        # For 'overall', use 2022 or latest available year
+        year_data = main_df[main_df['year'] == 2022]
+    
+    if year_data.empty:
+        raise Exception(f"No data available for year {year}")
+    
+    # Pivot data: regions x indicators
+    pivot_df = year_data.pivot_table(
+        index='region',
+        columns='data_type',
+        values='value',
+        aggfunc='mean'
+    )
+    
+    print(f"📊 Pivot shape before cleaning: {pivot_df.shape} (regions x indicators)")
+    print(f"📍 Regions before cleaning: {list(pivot_df.index)}")
+    
+    # Fill NaNs with column mean (don't drop regions)
+    pivot_df = pivot_df.fillna(pivot_df.mean())
+    
+    # If still have NaNs (column with all NaNs), fill with 0
+    pivot_df = pivot_df.fillna(0)
+    
+    print(f"📊 Pivot shape after cleaning: {pivot_df.shape}")
+    print(f"📍 Regions after cleaning: {list(pivot_df.index)}")
+    
+    regions = pivot_df.index.tolist()
+    X = pivot_df.values
+    
+    # Apply PCA for dimensionality reduction
+    if method == 'pca':
+        pca = PCA(n_components=2)
+        points = pca.fit_transform(X)
+    else:
+        # If other methods are needed, add them here
+        points = X[:, :2]  # Just take first 2 dimensions
+    
+    # Perform clustering with specified K
+    if k is None:
+        k = 4  # Default K
+    
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(points)
+    
+    return {
+        'regions': regions,
+        'points': points.tolist(),
+        'clusters': clusters.tolist(),
+        'k_optimal': k,  # In manual mode, this is the requested K
+        'k_used': k,  # Actual K used
+        'year': year if year != 'overall' else 'overall'
+    }
+
+
+@app.route('/clustering', methods=['GET'])
+def get_clustering_auto():
+    """Auto clustering - uses precomputed results with optimal K"""
     global clustering_data
-    if clustering_data is None or len(clustering_data) == 0:
-        return jsonify({
-            "status": "error",
-            "message": "Clustering data not available. Run clustering_precompute.py first."
-        }), 500
-
     try:
         method = request.args.get('method', 'pca')
         clustering = request.args.get('clustering', 'kmeans')
+        year = request.args.get('year', 'overall')
         
-        # Extract all year-based configurations
-        timeseries = []
-        for key, data in clustering_data.items():
-            if key.startswith('overall'):
-                continue
+        # Construct key
+        key = f"{year}_{method}_{clustering}"
+        
+        if key in clustering_data:
+            result = clustering_data[key].copy()
+            if 'year' not in result:
+                result['year'] = year
+            result['status'] = 'success'
+            return jsonify(result)
+        else:
+            return jsonify({"status": "error", "message": f"Clustering data not found for {key}"}), 404
             
-            parts = key.split('_')
-            if len(parts) >= 3:
-                year_str = parts[0]
-                key_method = parts[1]
-                key_clustering = parts[2]
-                
-                if key_method == method and key_clustering == clustering:
-                    try:
-                        year_int = int(year_str)
-                        timeseries.append({
-                            'year': year_int,
-                            **data
-                        })
-                    except ValueError:
-                        continue
-        
-        # Sort by year
-        timeseries.sort(key=lambda x: x['year'])
-        
-        return jsonify({
-            "status": "success",
-            "timeseries": timeseries,
-            "count": len(timeseries)
-        })
-    
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/clustering_manual', methods=['GET'])
+@app.route('/clustering_manual', methods=['GET'])
 def get_clustering_manual():
-    """
-    Compute clustering on-the-fly with specified K
-    """
-    global main_df
-    if main_df is None:
-        return jsonify({"status": "error", "message": "Dataset not loaded"}), 500
-    
+    """Manual clustering - computes clustering on-the-fly with specified K"""
     try:
-        year = request.args.get('year', 'overall')
         method = request.args.get('method', 'pca')
         clustering_type = request.args.get('clustering', 'kmeans')
-        k = int(request.args.get('k', 3))
+        year = request.args.get('year', 'overall')
+        k_param = request.args.get('k', None)
         
-        # Import required libraries
-        from sklearn.decomposition import PCA
-        from sklearn.manifold import TSNE
-        from sklearn.cluster import KMeans, SpectralClustering
-        from sklearn.preprocessing import StandardScaler
-        import numpy as np
+        if k_param is None:
+            return jsonify({"status": "error", "message": "Parameter 'k' is required for manual clustering"}), 400
         
-        # Prepare data
-        if year == 'overall':
-            df_year = main_df.groupby(['region', 'data_type'])['value'].median().reset_index()
-        else:
-            year_int = int(year)
-            df_year = main_df[main_df['year'] == year_int].groupby(['region', 'data_type'])['value'].mean().reset_index()
+        try:
+            k = int(k_param)
+            if k < 2 or k > 10:
+                return jsonify({"status": "error", "message": "K must be between 2 and 10"}), 400
+        except ValueError:
+            return jsonify({"status": "error", "message": "K must be a valid integer"}), 400
         
-        # Pivot to get regions x indicators
-        pivot = df_year.pivot(index='region', columns='data_type', values='value')
+        print(f"🎯 Manual clustering requested: year={year}, method={method}, clustering={clustering_type}, K={k}")
         
-        # Filter regions with at least 80% of indicators present
-        threshold = len(pivot.columns) * 0.8
-        pivot_clean = pivot.dropna(thresh=threshold)
-        pivot_clean = pivot_clean.fillna(pivot_clean.median())
+        # Perform clustering with specified K
+        result = perform_clustering_with_k(year, method, clustering_type, k)
+        result['status'] = 'success'
         
-        regions = pivot_clean.index.tolist()
-        features = pivot_clean.values
-        feature_names = pivot_clean.columns.tolist()
+        print(f"✅ Manual clustering completed: {len(result['regions'])} regions, {len(set(result['clusters']))} unique clusters")
         
-        # Dimensionality reduction
-        scaler = StandardScaler()
-        scaled_data = scaler.fit_transform(features)
+        return jsonify(result)
         
-        if method == 'pca':
-            reducer = PCA(n_components=2, random_state=42)
-            transformed = reducer.fit_transform(scaled_data)
-            explained_var = reducer.explained_variance_ratio_.tolist()
-        else:  # tsne
-            reducer = TSNE(n_components=2, perplexity=min(30, len(features) - 1), 
-                          max_iter=1000, random_state=42)
-            transformed = reducer.fit_transform(scaled_data)
-            explained_var = None
-        
-        # Clustering with specified K
-        if clustering_type == 'kmeans':
-            clusterer = KMeans(n_clusters=k, random_state=42, n_init=10)
-            labels = clusterer.fit_predict(transformed)
-            centroids = clusterer.cluster_centers_.tolist()
-        else:  # spectral
-            clusterer = SpectralClustering(n_clusters=k, random_state=42, affinity='rbf')
-            labels = clusterer.fit_predict(transformed)
-            # Compute centroids manually
-            centroids = []
-            for i in range(k):
-                cluster_points = transformed[labels == i]
-                if len(cluster_points) > 0:
-                    centroids.append(cluster_points.mean(axis=0).tolist())
-                else:
-                    centroids.append([0, 0])
-        
+    except Exception as e:
+        print(f"❌ Error in manual clustering: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/clustering_timeseries', methods=['GET'])
+def get_clustering_timeseries():
+    global clustering_data
+    try:
+        method = request.args.get('method', 'pca')
+        clustering = request.args.get('clustering', 'kmeans')
+        # Collect all precomputed clustering entries that match the requested method and clustering
+        timeseries = []
+        for key, value in clustering_data.items():
+            # Expect keys like '2002_pca_kmeans' or 'overall_pca_kmeans'
+            try:
+                parts = key.split('_')
+                year_part = parts[0]
+                method_part = parts[1] if len(parts) > 1 else ''
+                clustering_part = parts[2] if len(parts) > 2 else ''
+            except Exception:
+                continue
+
+            if method_part == method and clustering_part == clustering:
+                # Only numeric years (skip 'overall')
+                if year_part.isdigit():
+                    entry = value.copy()
+                    entry['year'] = int(year_part)
+                    timeseries.append(entry)
+
+        # Sort by year ascending
+        timeseries.sort(key=lambda x: x.get('year', 0))
+
+        if not timeseries:
+            return jsonify({"status": "error", "message": "No timeseries data found"}), 404
+
         return jsonify({
             "status": "success",
-            "regions": regions,
-            "points": transformed.tolist(),
-            "clusters": [int(c) for c in labels],
-            "k_optimal": k,
-            "centroids": centroids,
-            "explained_variance": explained_var,
-            "year": year if year == 'overall' else int(year),
-            "feature_names": feature_names
+            "timeseries": timeseries
         })
-    
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

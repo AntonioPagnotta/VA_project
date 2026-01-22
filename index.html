@@ -1,0 +1,3938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Analytics Dashboard by Pagnotta, Sorrentini and Trionfetti</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+    <style>
+        :root {
+            --primary-bg: #f4f6f8;
+            --card-bg: #ffffff;
+            --header-bg: #2c3e50;
+            --text-main: #333;
+            --accent: #3498db;
+            --border-radius: 8px;
+        }
+
+        
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0; background-color: var(--primary-bg);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            color: white; padding: 0 15px; height: 40px;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 40% 60%;
+            gap: 8px; padding: 8px;
+            height: calc(100vh - 40px);
+            box-sizing: border-box;
+        }
+
+        .col { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 10px; 
+            display: flex; 
+            flex-direction: column;
+            min-height: 0;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .card-header {
+            font-size: 0.7rem; font-weight: 700; color: var(--header-bg);
+            border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 3px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Bubble chart header controls: allow wrapping and smaller controls to fit */
+        .bubble-wrapper .card-header > div {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap; /* allow controls to wrap to next line on narrow viewports */
+        }
+
+        .bubble-wrapper .card-header label {
+            font-size: 0.62rem;
+            margin: 0 4px;
+            color: #586067;
+        }
+
+        .bubble-wrapper .card-header .mini-select {
+            padding: 4px 8px;
+            font-size: 0.62rem;
+            min-width: 70px;
+            max-width: 140px;
+            height: 28px;
+            box-sizing: border-box;
+        }
+
+        /* Map legend (vertical, left) - full vertical span, no scroll
+           The legend items will be spaced from bottom to top to match map flow. */
+        .map-legend {
+            position: absolute;
+            left: 8px;
+            top: 8px;
+            bottom: 8px;
+            width: 150px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 6px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.12);
+            padding: 8px 8px;
+            font-size: 12px;
+            z-index: 1000;
+            color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* spread items across full height */
+            overflow: visible; /* avoid internal scrolling */
+        }
+
+        .map-legend .legend-title {
+            font-weight: 700;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #1f2d3d;
+        }
+
+        .map-legend .legend-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .map-legend .legend-swatch {
+            width: 22px;
+            height: 14px;
+            border-radius: 3px;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+
+        .map-legend .legend-label { flex: 1; font-size: 11px; color: #475569; }
+
+        /* Layout Ratios - Equal 2x2 Grid */
+        .map-wrapper { flex: 1; min-height: 0; }
+        .cluster-wrapper { flex: 1; min-height: 0; }
+        .bubble-wrapper { flex: 1; min-height: 0; overflow: hidden; }
+        .stats-wrapper { flex: 1; min-height: 0; overflow: hidden; }
+
+        .chart-container { 
+            flex: 1;
+            position: relative; 
+            width: 100%; 
+            min-height: 0;
+            padding: 5px 15px 15px 15px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Cluster chart specific - leave space for temporal controls */
+        .cluster-wrapper .chart-container {
+            padding-bottom: 0; /* No padding, let flex handle spacing */
+        }
+        
+        .cluster-chart-area {
+            flex: 1;
+            position: relative;
+            min-height: 0; /* Allow shrinking */
+        }
+        
+        .temporal-controls-area {
+            flex-shrink: 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.98);
+            border-top: 1px solid #eee;
+        }
+        
+        /* Controls */
+        .cluster-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 0.65rem;
+        }
+
+        .mini-select {
+            padding: 6px 12px;
+            font-size: 0.7rem;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            background: linear-gradient(145deg, #ffffff, #f5f7fa);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08), inset 0 1px 2px rgba(255,255,255,0.8);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .mini-select:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .mini-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3), 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-mini {
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-mini:hover {
+            background: #2980b9;
+        }
+        
+        .btn-mini.active {
+            background: #e74c3c;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
+            font-weight: bold;
+        }
+        
+        /* Bubble chart specific styling */
+        .bubble-wrapper .chart-container {
+            padding: 5px 10px 40px 10px; /* Less padding, space for controls at bottom */
+        }
+        
+        .bubble-wrapper canvas {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        .bubble-controls-overlay {
+            position: absolute;
+            bottom: 5px;
+            left: 50px;
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 4px;
+            padding: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            display: flex;
+            gap: 3px;
+            z-index: 10;
+        }
+        
+        .zoom-controls {
+            display: flex;
+            gap: 2px;
+        }
+        
+        .pan-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 28px);
+            gap: 2px;
+        }
+        
+        .control-btn {
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            font-size: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+        }
+        
+        .control-btn:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+        }
+        
+        .control-btn:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+        }
+        
+        .scale-toggle {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 0.65rem;
+            padding-left: 8px;
+            border-left: 1px solid #ddd;
+        }
+        
+        .scale-toggle input[type="checkbox"] {
+            width: 12px;
+            height: 12px;
+        }
+
+        .k-display {
+            font-size: 0.65rem;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+
+        /* Temporal controls */
+        .temporal-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .temporal-controls.active {
+            display: flex;
+        }
+        
+        .timeline-slider {
+            width: 100%;
+            margin: 5px 0;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: linear-gradient(90deg, #e0e7ff 0%, #f3e7e9 100%);
+            outline: none;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            opacity: 0.95;
+        }
+
+        .timeline-slider:hover {
+            opacity: 1;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.15), 0 2px 8px rgba(102, 126, 234, 0.2);
+        }
+        
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.5), 0 1px 3px rgba(0,0,0,0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.7), 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .timeline-slider::-webkit-slider-thumb:active {
+            transform: scale(1.1);
+        }
+        
+        .timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.5), 0 1px 3px rgba(0,0,0,0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .timeline-slider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.7), 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .timeline-slider::-moz-range-thumb:active {
+            transform: scale(1.1);
+        }
+        
+        /* OVERVIEW MODE: Effetto speciale con animazione */
+        .timeline-slider.overview-mode {
+            background: linear-gradient(90deg, #ffeaa7 0%, #fd79a8 100%);
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.15), 0 0 20px rgba(253, 121, 168, 0.3);
+        }
+
+        .timeline-slider.overview-mode::-webkit-slider-thumb {
+            width: 26px;
+            height: 26px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            box-shadow: 0 4px 16px rgba(245, 87, 108, 0.7), 0 2px 8px rgba(0,0,0,0.3), 0 0 0 3px rgba(255,255,255,0.9);
+            animation: glow 2s infinite;
+        }
+        
+        .timeline-slider.overview-mode::-moz-range-thumb {
+            width: 26px;
+            height: 26px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            box-shadow: 0 4px 16px rgba(245, 87, 108, 0.7), 0 2px 8px rgba(0,0,0,0.3), 0 0 0 3px rgba(255,255,255,0.9);
+            animation: glow 2s infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { 
+                box-shadow: 0 4px 16px rgba(245, 87, 108, 0.7), 0 2px 8px rgba(0,0,0,0.3), 0 0 0 3px rgba(255,255,255,0.9);
+            }
+            50% { 
+                box-shadow: 0 4px 24px rgba(245, 87, 108, 1), 0 2px 10px rgba(0,0,0,0.4), 0 0 0 4px rgba(255,255,255,1);
+            }
+        }
+
+        .playback-controls {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            font-size: 0.7rem;
+        }
+
+        .year-display {
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: white;
+            padding: 6px 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            min-width: 55px;
+            text-align: center;
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.4), inset 0 1px 2px rgba(255,255,255,0.3);
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+        }
+
+        .year-display:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 14px rgba(102, 126, 234, 0.6);
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            z-index: 100;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        /* Table Styling per Schizzo */
+        .table-scroll { overflow-y: auto; flex-grow: 1; border: 1px solid #f0f0f0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th { background: #f8f9fa; border: 1px solid #dee2e6; padding: 6px; position: sticky; top: 0; }
+        td { border: 1px solid #eee; padding: 6px; text-align: center; }
+        
+        .col-selected-regions { background: #ebf5fb; font-weight: bold; width: 110px; text-align: left; }
+        
+        /* K Slider Styling */
+        .k-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 5px;
+        }
+        
+        /* Manual variable selection list */
+        .manual-variables-list {
+            display: none;
+            max-height: 280px;
+            overflow-y: auto;
+            border: 2px solid #e0e7ff;
+            border-radius: 8px;
+            padding: 12px;
+            background: linear-gradient(135deg, #fafbff 0%, #f5f7fa 100%);
+            width: 100%;
+            margin-top: 8px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .manual-variables-list.active {
+            display: block;
+        }
+
+        .manual-variables-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .manual-variables-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .manual-variables-list::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+
+        .manual-variables-list::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+        
+        .variable-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+        
+        .variable-checkbox-item:hover {
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+        
+        .variable-checkbox-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .variable-checkbox-item label {
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        .k-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 10px;
+            background: #e0e7ff;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .k-slider:hover {
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.15), 0 2px 8px rgba(102, 126, 234, 0.2);
+        }
+        
+        .k-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .k-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 12px rgba(102, 126, 234, 0.7);
+        }
+        
+        .k-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 3px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .k-slider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 12px rgba(102, 126, 234, 0.7);
+        }
+        
+        .k-value-display {
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: #2c3e50;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* Small white box around numeric values in Top K table */
+        .topk-value-box {
+            display: inline-block;
+            background: #ffffff;
+            color: #111827; /* dark text */
+            padding: 4px 8px;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06) inset;
+            min-width: 48px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+
+        #italyMap { width: 100%; height: 100%; border-radius: 4px; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
+        .leaflet-container { user-select: none; -webkit-user-select: none; }
+        #clusterChart { cursor: crosshair; }
+        #bubbleChart { cursor: grab; }
+        #bubbleChart:active { cursor: grabbing; }
+        .btn-update { background: var(--accent); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="font-weight:700; font-size: 1rem; letter-spacing: 0.5px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+            Visual Analytics Dashboard by Pagnotta, Sorrentini and Trionfetti
+        </div>
+        <button class="btn-update" onclick="loadClusteringData()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; padding: 6px 16px; border-radius: 8px; font-weight: 600; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3); transition: all 0.3s;">🔄 Refresh</button>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="col">
+            <div class="card map-wrapper">
+                <div class="card-header">
+                    <span style="font-weight: 700; letter-spacing: 0.3px;">🗺️ Geospatial Distribution</span>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label style="font-size: 0.65rem; font-weight: normal;">Variable:</label>
+                        <select id="map-variable-select" class="mini-select" onchange="updateMapVariable()">
+                            <option value="none" selected>None</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="italyMap"></div>
+            </div>
+            <div class="card cluster-wrapper">
+                <div class="card-header" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);">
+                    <span> Dimensionality Reduction (based on PCA and K-Means) <span class="k-display" id="k-display"></span></span>
+                    <div class="cluster-controls">
+                        <label style="font-size: 0.65rem;">K:</label>
+                        <select id="k-mode-select" class="mini-select" onchange="loadClusteringData()">
+                            <option value="auto" selected>Auto</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="cluster-chart-area">
+                        <canvas id="clusterChart"></canvas>
+                        <div id="cluster-loading" class="loading-overlay">
+                            <span>Loading clustering data...</span>
+                        </div>
+                    </div>
+                    <div class="temporal-controls-area">
+                        <div id="temporal-controls" class="temporal-controls active">
+                            <div class="playback-controls" style="gap: 8px;">
+                                <button class="btn-mini" id="play-pause-btn" onclick="togglePlayPause()" style="min-width: 80px;">
+                                    <span id="play-pause-icon">▶</span> <span id="play-pause-text">Play</span>
+                                </button>
+                                <button class="btn-mini" onclick="resetAnimation()" title="Reset to start">↺ Reset</button>
+                                <button class="btn-mini active" onclick="showOverview()" id="overview-btn" title="Show overall analysis">🔍 Overview</button>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-left: 8px;">
+                                    <label style="font-size: 0.65rem; font-weight: 600; color: #7f8c8d;">Speed:</label>
+                                    <select id="speed-select" class="mini-select" style="min-width: 85px;">
+                                        <option value="6000">🐌 Slow</option>
+                                        <option value="3000" selected>⚡ Normal</option>
+                                        <option value="1200">🚀 Fast</option>
+                                        <option value="400">💨 Ultra</option>
+                                    </select>
+                                </div>
+                                <span class="year-display" id="year-display" style="margin-left: auto;">2022</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                                <span style="font-size: 0.65rem; color: #7f8c8d; min-width: 35px;">Start</span>
+                                <input type="range" id="timeline-slider" class="timeline-slider overview-mode" 
+                                       min="0" max="100" value="0" oninput="onTimelineChange()" style="flex: 1;">
+                                <span style="font-size: 0.65rem; color: #7f8c8d; min-width: 35px; text-align: right;">End</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card bubble-wrapper" style="overflow: hidden;">
+                <div class="card-header">
+                    <span>💹 Bubble Chart - Variable Comparison</span>
+                    <div style="display: flex; gap: 6px; align-items: center; font-size: 0.65rem;">
+                        <label>X:</label>
+                        <select id="bubble-x-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                        <label>Y:</label>
+                        <select id="bubble-y-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                        <label>Size:</label>
+                        <select id="bubble-size-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="bubbleChart"></canvas>
+                    <div class="bubble-controls-overlay">
+                        <div class="zoom-controls">
+                            <button class="control-btn" onclick="resetBubbleZoom()" title="Reset">⟲</button>
+                            <button class="control-btn" onclick="bubbleZoomIn()" title="Zoom In">+</button>
+                            <button class="control-btn" onclick="bubbleZoomOut()" title="Zoom Out">−</button>
+                            <button class="control-btn" onclick="clearTrails()" title="Clear Trails">✖</button>
+                        </div>
+                        <!-- Log-scale controls removed: bubble chart uses linear axes only -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="card stats-wrapper">
+                <div class="card-header" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); flex-direction: column; align-items: flex-start; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <span style="font-weight: 700; letter-spacing: 0.3px;">📈 Top K Diverse Variables</span>
+                        <button class="btn-mini" id="manual-mode-btn" onclick="toggleManualModeButton()" style="font-size: 0.65rem; padding: 4px 10px;">
+                            <span id="manual-mode-icon">📝</span> <span id="manual-mode-text">Manual</span>
+                        </button>
+                    </div>
+                    <div style="font-size:0.65rem; color:#6b7280; margin-top:6px; max-width:100%; line-height:1.2;">
+                        Shows variables that best distinguish the selected regions from clusters. Colors use an 8-bin normalized scale per column.
+                    </div>
+                    <!-- K slider (visibile solo in auto mode) -->
+                    <div class="k-slider-container" id="k-slider-container" style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                        <label style="font-size: 0.7rem; font-weight: 600; color: #7f8c8d; min-width: 20px;">K:</label>
+                        <input type="range" id="k-slider" class="k-slider" 
+                               min="1" max="32" value="5" 
+                               oninput="updateTopKValue()" style="flex: 1;">
+                        <span id="k-value-display" class="k-value-display" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 10px; border-radius: 6px; min-width: 35px; text-align: center; font-weight: 700; box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);">5</span>
+                    </div>
+                    <!-- Manual selection counter (visibile solo in manual mode) -->
+                    <div id="manual-selection-info" style="display: none; width: 100%; padding: 6px 12px; background: linear-gradient(135deg, rgba(240, 147, 251, 0.1) 0%, rgba(245, 87, 108, 0.1) 100%); border-radius: 6px; border-left: 3px solid #f5576c;">
+                        <span style="font-size: 0.7rem; font-weight: 600; color: #f5576c;">✓ Manual Mode: <span id="selected-vars-count">0</span> variables selected</span>
+                    </div>
+                </div>
+                <div id="manual-variables-list" class="manual-variables-list">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #3498db;">
+                        <span style="font-weight: bold; font-size: 0.75rem; color: #2c3e50;">Select Variables:</span>
+                        <button class="btn-mini" onclick="closeManualSelection()" style="background: #27ae60;">✓ OK</button>
+                    </div>
+                    <div id="manual-variables-checkboxes">
+                        <!-- Populated dynamically with checkboxes -->
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table>
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Server configuration
+        const SERVER_BASE = 'http://127.0.0.1:5000';
+        
+        // Region coordinates for map
+        const regionCoords = {
+            "Abruzzo": [42.35, 13.39],
+            "Basilicata": [40.63, 15.80],
+            "Calabria": [38.91, 16.59],
+            "Campania": [40.83, 14.25],
+            "Emilia-Romagna": [44.49, 11.34],
+            "Friuli-Venezia Giulia": [46.06, 13.24],
+            "Lazio": [41.89, 12.51],
+            "Liguria": [44.41, 8.95],
+            "Lombardia": [45.46, 9.19],
+            "Marche": [43.62, 13.51],
+            "Molise": [41.67, 14.60],
+            "Piemonte": [45.07, 7.69],
+            "Puglia": [41.13, 16.87],
+            "Sardegna": [39.22, 9.12],
+            "Sicilia": [38.12, 13.36],
+            "Toscana": [43.77, 11.25],
+            "Trentino-Alto Adige": [46.07, 11.12],
+            "Umbria": [43.11, 12.39],
+            "Valle d'Aosta": [45.74, 7.43],
+            "Veneto": [45.44, 12.32]
+        };
+
+        // Map setup
+        const map = L.map('italyMap', {
+            center: [42.0, 12.5],  // Moved south from 42.5 to 41.8 to show Sicily better
+            zoom: 4.6,  // Slightly smaller default zoom
+            // Allow fractional zoom levels (disable integer snapping)
+            zoomSnap: 0.1,
+            zoomDelta: 0.1,
+            zoomControl: false,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+            touchZoom: false
+        });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+        const mapLayer = L.layerGroup().addTo(map);
+
+        // Cluster colors (8 colors for max 8 clusters)
+        const clusterColors = [
+            '#d62728', '#1f77b4', '#2ca02c', '#9467bd',
+            '#ff7f0e', '#8c564b', '#e377c2', '#17becf',
+            '#bcbd22', '#7f7f7f'
+        ];
+
+        // State variables
+        let currentDataSet = [];
+        let currentClustering = null;
+        let selectedRegionNames = [];
+        let isDrawing = false;
+        let brushStart = null;
+        let brushEnd = null;
+        let hasMoved = false;
+        let currentYearlyData = null;
+        let commonIndicators = ['BIRTHRATE', 'DEATHRATE', 'LIFEEXP0T', 'DEPENDRATE', 'MARRATE'];
+        let topKValue = 5; // Default K value for top variables
+        let isManualTopKMode = false; // Toggle for manual variable selection
+        let manualSelectedVariables = []; // User-selected variables in manual mode
+        let manualListClickHandler = null; // Handler to close manual list when clicking outside
+        let isOverviewMode = true; // Start in overview mode by default
+        let isAnimationPlaying = false; // Track animation state for play/pause
+        
+        // ============================================
+        // BUBBLE CHART STATE MANAGEMENT
+        // ============================================
+        
+        // Variable configuration for axes and bubble size
+        let bubbleXVar = 'BIRTHRATE';
+        let bubbleYVar = 'LIFEEXP0T';
+        let bubbleSizeVar = 'DEATHRATE';
+        
+        // Trail tracking for temporal mode
+        let bubbleTrails = {}; // region -> array of {x, y, size, year}
+        let clickedBubbleRegions = []; // Regions selected for trail visualization
+        
+        // Hover state for interactive crosshair
+        let bubbleHoverState = {
+            active: false,
+            region: null,
+            position: { x: 0, y: 0 },
+            values: { x: 0, y: 0, size: 0 }
+        };
+        
+        // PCP state - REMOVED ZOOM/PAN
+        let indicatorNames = {}; // Map DATA_TYPE -> readable name
+        let selectedVariable = null; // Currently selected variable for map coloring
+        let globalScales = {}; // Global min-max for each variable across all years
+        let globalScalesCalculated = false;  // Track if scales are already calculated
+        let geoJsonLayer = null; // GeoJSON layer for regions
+        let regionGeoJson = null; // GeoJSON data
+        
+        // Cache for all yearly data (year -> data array)
+        let allYearsDataCache = {};
+
+        // When true, keep bubble chart axes fixed to overview ranges even in temporal mode
+        let bubbleForceOverviewInTemporal = true;
+        // When true, keep cluster PCA chart axes fixed to global ranges in temporal mode
+        let clusterForceOverviewInTemporal = true;
+        let clusterGlobalRanges = null; // { xmin, xmax, ymin, ymax }
+        let clusterGlobalRangesCalculated = false;
+        
+        // Animation variables
+        let timeseriesData = null;
+        let animationInterval = null;
+        let currentTimeIndex = 0;
+
+        // Brush selection plugin
+        const brushPlugin = {
+            id: 'brushPlugin',
+            afterDatasetsDraw: (chart) => {
+                if (brushStart && brushEnd) {
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
+                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+
+                    const x = Math.min(brushStart.x, brushEnd.x);
+                    const y = Math.min(brushStart.y, brushEnd.y);
+                    const w = Math.abs(brushEnd.x - brushStart.x);
+                    const h = Math.abs(brushEnd.y - brushStart.y);
+                    
+                    ctx.fillRect(x, y, w, h);
+                    ctx.strokeRect(x, y, w, h);
+                    ctx.restore();
+                }
+            }
+        };
+
+        // Chart setup
+        const clusterChart = new Chart(document.getElementById('clusterChart'), {
+            type: 'scatter',
+            data: { datasets: [] },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0 // Disable Chart.js animation to have smooth manual interpolation
+                },
+                plugins: { 
+                    legend: { 
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: { size: 10 },
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const region = context.dataset.regionNames[context.dataIndex];
+                                const cluster = context.dataset.label;
+                                return `${region} - ${cluster}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Component 1', font: { size: 10 } },
+                        min: -10,
+                        max: 10
+                    },
+                    y: { 
+                        title: { display: true, text: 'Component 2', font: { size: 10 } },
+                        min: -10,
+                        max: 10
+                    }
+                }
+            },
+            plugins: [brushPlugin]
+        });
+
+        // ============================================
+        // BUBBLE CHART PLUGINS
+        // ============================================
+        
+        /**
+         * Plugin: Year Watermark - Displays current year in temporal mode
+         */
+        const bubbleYearWatermarkPlugin = {
+            id: 'bubbleYearWatermark',
+            beforeDatasetsDraw: (chart) => {
+                if (!timeseriesData || currentTimeIndex >= timeseriesData.length) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const centerX = (chartArea.left + chartArea.right) / 2;
+                const centerY = (chartArea.top + chartArea.bottom) / 2;
+                const year = timeseriesData[currentTimeIndex].year;
+                
+                ctx.save();
+                ctx.font = 'bold 90px Segoe UI';
+                ctx.fillStyle = 'rgba(200, 200, 200, 0.12)';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(year, centerX, centerY);
+                ctx.restore();
+            }
+        };
+        
+        /**
+         * Plugin: Interactive Crosshair - Shows crosshair lines and axis labels
+         */
+        const bubbleCrosshairPlugin = {
+            id: 'bubbleCrosshair',
+            afterDatasetsDraw: (chart) => {
+                if (!bubbleHoverState.active) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const { x, y } = bubbleHoverState.position;
+                const { x: xVal, y: yVal } = bubbleHoverState.values;
+                
+                ctx.save();
+                
+                // Draw crosshair lines
+                ctx.setLineDash([6, 4]);
+                ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
+                ctx.lineWidth = 1.5;
+                
+                // Vertical line
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                
+                // Horizontal line
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(chartArea.left, y);
+                ctx.stroke();
+                
+                // Draw axis labels
+                ctx.setLineDash([]);
+                ctx.font = 'bold 11px Segoe UI';
+                
+                // X-axis label
+                const xText = xVal.toFixed(2);
+                const xTextWidth = ctx.measureText(xText).width;
+                const xLabelX = Math.max(chartArea.left + 5, Math.min(x - xTextWidth / 2, chartArea.right - xTextWidth - 5));
+                const xLabelY = chartArea.bottom + 18;
+                
+                drawLabelBox(ctx, xLabelX, xLabelY, xText, '#3498db');
+                
+                // Y-axis label
+                const yText = yVal.toFixed(2);
+                const yTextWidth = ctx.measureText(yText).width;
+                const yLabelX = chartArea.left - yTextWidth - 12;
+                const yLabelY = y + 5;
+                
+                drawLabelBox(ctx, yLabelX, yLabelY, yText, '#e74c3c');
+                
+                ctx.restore();
+            }
+        };
+        
+        /**
+         * Plugin: Enhanced Tooltip - Shows detailed bubble information
+         */
+        const bubbleTooltipPlugin = {
+            id: 'bubbleTooltip',
+            afterDatasetsDraw: (chart) => {
+                if (!bubbleHoverState.active || !bubbleHoverState.region) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const { x, y } = bubbleHoverState.position;
+                const { x: xVal, y: yVal, size: sizeVal } = bubbleHoverState.values;
+                const region = bubbleHoverState.region;
+                
+                // Tooltip content
+                const xName = indicatorNames[bubbleXVar] || bubbleXVar;
+                const yName = indicatorNames[bubbleYVar] || bubbleYVar;
+                const sizeName = indicatorNames[bubbleSizeVar] || bubbleSizeVar;
+                
+                const lines = [
+                    { label: 'Region', value: region, bold: true },
+                    { label: xName, value: xVal.toFixed(2) },
+                    { label: yName, value: yVal.toFixed(2) },
+                    { label: sizeName, value: sizeVal.toFixed(2), color: '#ff7f00' }
+                ];
+                
+                // Calculate tooltip dimensions
+                ctx.font = '11px Segoe UI';
+                const lineHeight = 18;
+                const padding = 10;
+                const maxLabelWidth = Math.max(...lines.map(l => ctx.measureText(l.label + ':').width));
+                const maxValueWidth = Math.max(...lines.map(l => ctx.measureText(l.value).width));
+                const tooltipWidth = maxLabelWidth + maxValueWidth + padding * 3;
+                const tooltipHeight = lines.length * lineHeight + padding * 2;
+                
+                // Position tooltip (avoid edges)
+                let tooltipX = x + 15;
+                let tooltipY = y - tooltipHeight / 2;
+                
+                if (tooltipX + tooltipWidth > chartArea.right) {
+                    tooltipX = x - tooltipWidth - 15;
+                }
+                if (tooltipY < chartArea.top) {
+                    tooltipY = chartArea.top;
+                }
+                if (tooltipY + tooltipHeight > chartArea.bottom) {
+                    tooltipY = chartArea.bottom - tooltipHeight;
+                }
+                
+                ctx.save();
+                
+                // Draw tooltip background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+                
+                roundRect(ctx, tooltipX, tooltipY, tooltipWidth, tooltipHeight, 6);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.stroke();
+                
+                // Draw tooltip content
+                let currentY = tooltipY + padding + 12;
+                lines.forEach(line => {
+                    // Label
+                    ctx.font = line.bold ? 'bold 12px Segoe UI' : '11px Segoe UI';
+                    ctx.fillStyle = '#555';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(line.label + ':', tooltipX + padding, currentY);
+                    
+                    // Value
+                    ctx.font = line.bold ? 'bold 12px Segoe UI' : 'bold 11px Segoe UI';
+                    ctx.fillStyle = line.color || '#2c3e50';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(line.value, tooltipX + tooltipWidth - padding, currentY);
+                    
+                    currentY += lineHeight;
+                });
+                
+                ctx.restore();
+            }
+        };
+        
+        // ============================================
+        // BUBBLE CHART HELPER FUNCTIONS
+        // ============================================
+        
+        /**
+         * Draw a label box with background and border
+         */
+        function drawLabelBox(ctx, x, y, text, accentColor = '#3498db') {
+            const textWidth = ctx.measureText(text).width;
+            const boxPadding = 5;
+            const boxWidth = textWidth + boxPadding * 2;
+            const boxHeight = 18;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.fillRect(x - boxPadding, y - 13, boxWidth, boxHeight);
+            
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - boxPadding, y - 13, boxWidth, boxHeight);
+            
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillText(text, x, y);
+        }
+        
+        /**
+         * Draw rounded rectangle
+         */
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+        
+        /**
+         * Convert hex color to rgba
+         */
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+        
+        /**
+         * Calculate optimal axis range for bubble chart
+         */
+        function calculateAxisRange(values, paddingPercent = 0.1) {
+            if (!values || values.length === 0) {
+                return { min: 0, max: 100 };
+            }
+            
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const range = max - min;
+            
+            // Add padding to prevent bubbles from touching edges
+            // If range is very small, use a minimum padding
+            const padding = range > 0 ? range * paddingPercent : Math.abs(max) * paddingPercent || 1;
+            
+            return {
+                min: min - padding,
+                max: max + padding
+            };
+        }
+        
+        /**
+         * Calculate bubble radius
+         */
+        function calculateBubbleRadius(sizeValue, minSize = 5, maxSize = 18) {
+            return Math.sqrt(Math.abs(sizeValue)) * 1.5 + minSize;
+        }
+        
+        /**
+         * Get region data for bubble chart
+         */
+        function getRegionBubbleData(regionName) {
+            const values = {};
+            
+            if (!currentYearlyData) return null;
+            
+            currentYearlyData.forEach(row => {
+                if (row.region === regionName) {
+                    values[row.data_type] = row.value;
+                }
+            });
+            
+            const xVal = values[bubbleXVar];
+            const yVal = values[bubbleYVar];
+            const sizeVal = values[bubbleSizeVar];
+            
+            if (xVal === undefined || yVal === undefined || sizeVal === undefined) {
+                return null;
+            }
+            
+            return { x: xVal, y: yVal, size: sizeVal, allValues: values };
+        }
+        
+        /**
+         * Get bubble color based on size value (heatmap)
+         */
+        function getBubbleColor(sizeValue) {
+            const sizeScale = globalScales[bubbleSizeVar];
+            if (!sizeScale || sizeScale.max === sizeScale.min) {
+                return '#fdae6b';
+            }
+            
+            const rawNorm = (sizeValue - sizeScale.min) / (sizeScale.max - sizeScale.min);
+            const normalized = Math.max(0, Math.min(1, rawNorm));
+            return getHeatmapColor(normalized);
+        }
+        
+        /**
+         * Reset bubble zoom
+         */
+        function resetBubbleZoom() {
+            bubbleChart.resetZoom();
+            bubbleHoverState.active = false;
+            bubbleChart.update('none');
+        }
+        
+        /**
+         * Zoom in on bubble chart
+         */
+        function bubbleZoomIn() {
+            bubbleChart.zoom(1.2);
+        }
+        
+        /**
+         * Zoom out on bubble chart
+         */
+        function bubbleZoomOut() {
+            bubbleChart.zoom(0.8);
+        }
+        
+        // Log-scale toggles removed: bubble chart uses linear axes only
+        
+        // ============================================
+        // BUBBLE CHART EVENT HANDLERS
+        // ============================================
+        
+        /**
+         * Handle bubble click events
+         */
+        function handleBubbleClick(event, elements) {
+            const isTemporalMode = true; // Always in temporal mode
+            
+            if (elements.length > 0) {
+                const datasetIndex = elements[0].datasetIndex;
+                const dataset = bubbleChart.data.datasets[datasetIndex];
+                
+                if (!dataset.regionName) return;
+                
+                const region = dataset.regionName;
+                
+                // Check if we have cached data for trails (either in temporal mode or after animation played)
+                const hasCachedData = Object.keys(allYearsDataCache).length > 0;
+                
+                if (isTemporalMode || hasCachedData) {
+                    const index = clickedBubbleRegions.indexOf(region);
+                    if (index >= 0) {
+                        clickedBubbleRegions.splice(index, 1);
+                        console.log('Trail hidden:', region);
+                    } else {
+                        clickedBubbleRegions.push(region);
+                        console.log('Trail shown:', region);
+                        // Build full historical trail for this region up to current year
+                        buildFullTrailForRegion(region);
+                    }
+                    updateBubbleChart();
+                } else {
+                    console.log('Clicked region:', region, '(no trail data - play animation first)');
+                }
+            } else {
+                if (clickedBubbleRegions.length > 0) {
+                    clickedBubbleRegions = [];
+                    console.log('All trails cleared');
+                    updateBubbleChart();
+                }
+            }
+        }
+        
+        /**
+         * Handle bubble hover events
+         */
+        function handleBubbleHover(event, elements) {
+            const canvas = event.native.target;
+            
+            if (elements.length > 0) {
+                const element = elements[0];
+                const datasetIndex = element.datasetIndex;
+                const dataIndex = element.index;
+                const dataset = bubbleChart.data.datasets[datasetIndex];
+                const dataPoint = dataset.data[dataIndex];
+                
+                if (!dataPoint || !dataset.regionName) {
+                    canvas.style.cursor = 'default';
+                    bubbleHoverState.active = false;
+                    bubbleChart.update('none');
+                    return;
+                }
+                
+                canvas.style.cursor = 'pointer';
+                
+                const xScale = bubbleChart.scales.x;
+                const yScale = bubbleChart.scales.y;
+                
+                bubbleHoverState.active = true;
+                bubbleHoverState.region = dataset.regionName;
+                bubbleHoverState.position = {
+                    x: xScale.getPixelForValue(dataPoint.x),
+                    y: yScale.getPixelForValue(dataPoint.y)
+                };
+                bubbleHoverState.values = {
+                    x: dataPoint.x,
+                    y: dataPoint.y,
+                    size: getRegionBubbleData(dataset.regionName)?.size || 0
+                };
+                
+                bubbleChart.update('none');
+            } else {
+                canvas.style.cursor = 'default';
+                bubbleHoverState.active = false;
+                bubbleChart.update('none');
+            }
+        }
+
+        // ============================================
+        // BUBBLE CHART CONFIGURATION
+        // ============================================
+        
+        const bubbleChart = new Chart(document.getElementById('bubbleChart'), {
+            type: 'bubble',
+            data: { datasets: [] },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                layout: {
+                    padding: {
+                        left: 5,
+                        right: 5,
+                        top: 5,
+                        bottom: 5
+                    }
+                },
+                scales: { 
+                    x: { 
+                        type: 'linear',  // Can be changed to 'logarithmic'
+                        beginAtZero: true,  // Force start from 0
+                        title: { 
+                            display: true, 
+                            text: 'Birth Rate', 
+                            font: { size: 11, weight: '600' },
+                            color: '#2c3e50'
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        ticks: { 
+                            font: { size: 10 },
+                            maxTicksLimit: 10
+                        },
+                        // Scales will be explicitly set on update
+                        min: 0,
+                        max: 100
+                    }, 
+                    y: { 
+                        type: 'linear',  // Can be changed to 'logarithmic'
+                        beginAtZero: true,  // Force start from 0
+                        title: { 
+                            display: true, 
+                            text: 'Life Expectancy', 
+                            font: { size: 11, weight: '600' },
+                            color: '#2c3e50'
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        ticks: { 
+                            font: { size: 10 },
+                            maxTicksLimit: 10
+                        },
+                        // Scales will be explicitly set on update
+                        min: 0,
+                        max: 100
+                    } 
+                },
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                    zoom: {
+                        pan: {
+                            enabled: true,
+                            mode: 'xy',
+                            modifierKey: null,  // No modifier key needed - drag freely
+                            threshold: 5
+                        },
+                        zoom: {
+                            wheel: {
+                                enabled: false  // Zoom disabled
+                            },
+                            pinch: { 
+                                enabled: false
+                            },
+                            mode: 'xy'
+                        }
+                    }
+                },
+                onClick: handleBubbleClick,
+                onHover: (event, elements) => {
+                    // Keep default cursor, no pointer change
+                    const canvas = event.native.target;
+                    canvas.style.cursor = 'default';
+                    
+                    if (elements.length > 0 && elements[0].element) {
+                        handleBubbleHover(event, elements);
+                    } else {
+                        bubbleHoverState.active = false;
+                        bubbleChart.update('none');
+                    }
+                }
+            },
+            plugins: [
+                bubbleYearWatermarkPlugin,
+                bubbleCrosshairPlugin,
+                bubbleTooltipPlugin
+            ]
+        });
+        
+        // ============================================
+        // BUBBLE CHART VARIABLE CHANGE & UPDATE
+        // ============================================
+        
+        /**
+         * Handle variable selection change for bubble chart axes
+         */
+        function onBubbleVariableChange() {
+            const xSelect = document.getElementById('bubble-x-select');
+            const ySelect = document.getElementById('bubble-y-select');
+            const sizeSelect = document.getElementById('bubble-size-select');
+            
+            if (xSelect?.value) bubbleXVar = xSelect.value;
+            if (ySelect?.value) bubbleYVar = ySelect.value;
+            if (sizeSelect?.value) bubbleSizeVar = sizeSelect.value;
+            
+            console.log('Bubble variables updated:', { x: bubbleXVar, y: bubbleYVar, size: bubbleSizeVar });
+            
+            // Clear trails and selections when changing variables
+            bubbleTrails = {};
+            clickedBubbleRegions = [];
+            
+            // Reset zoom state to ensure proper scaling
+            bubbleChart.resetZoom();
+            
+            // Update chart with new variables
+            updateBubbleChart();
+        }
+        
+        /**
+         * Calculate dynamic axis ranges based on current mode and selection
+         */
+        function calculateDynamicAxisRanges() {
+            const hasSelection = selectedRegionNames.length > 0;
+            const regionsToConsider = hasSelection ? selectedRegionNames : Object.keys(regionCoords);
+            
+            console.log(`📊 Calculating axis ranges - Mode: ${isOverviewMode ? 'OVERVIEW' : 'TEMPORAL'}, Selection: ${hasSelection ? regionsToConsider.length + ' regions' : 'ALL'}`);
+            
+            let xValues = [];
+            let yValues = [];
+            
+            const forceOverview = !isOverviewMode && bubbleForceOverviewInTemporal;
+
+            if (isOverviewMode || forceOverview) {
+                // OVERVIEW MODE: use only current year data for selected/all regions
+                console.log('📌 Overview mode: using current year data only', forceOverview ? '(FORCED while temporal)' : '');
+                regionsToConsider.forEach(region => {
+                    currentYearlyData.forEach(row => {
+                        if (row.region === region) {
+                            if (row.data_type === bubbleXVar) xValues.push(row.value);
+                            if (row.data_type === bubbleYVar) yValues.push(row.value);
+                        }
+                    });
+                });
+            } else {
+                // TEMPORAL MODE: use all years for selected/all regions
+                console.log('📌 Temporal mode: calculating from ALL years and regions');
+                
+                // Collect all years from cache
+                const cachedYears = Object.keys(allYearsDataCache).map(y => parseInt(y)).sort((a, b) => a - b);
+                console.log(`📅 Using ${cachedYears.length} cached years: ${cachedYears.length > 0 ? cachedYears[0] + ' to ' + cachedYears[cachedYears.length - 1] : 'none'}`);
+                
+                if (cachedYears.length > 0) {
+                    // For each cached year, extract X and Y values for the regions to consider
+                    cachedYears.forEach(year => {
+                        const yearData = allYearsDataCache[year];
+                        if (!yearData || !Array.isArray(yearData)) return;
+                        
+                        // Iterate through all rows in this year's data
+                        yearData.forEach(row => {
+                            // Check if this row belongs to a region we care about
+                            if (regionsToConsider.includes(row.region)) {
+                                // Collect X values
+                                if (row.data_type === bubbleXVar && row.value !== null && row.value !== undefined) {
+                                    xValues.push(row.value);
+                                }
+                                // Collect Y values
+                                if (row.data_type === bubbleYVar && row.value !== null && row.value !== undefined) {
+                                    yValues.push(row.value);
+                                }
+                            }
+                        });
+                    });
+                    
+                    console.log(`📊 Collected ${xValues.length} X values (${bubbleXVar}) and ${yValues.length} Y values (${bubbleYVar}) from cache`);
+                    
+                    if (xValues.length > 0) {
+                        console.log(`   X range: ${Math.min(...xValues).toFixed(2)} to ${Math.max(...xValues).toFixed(2)}`);
+                    }
+                    if (yValues.length > 0) {
+                        console.log(`   Y range: ${Math.min(...yValues).toFixed(2)} to ${Math.max(...yValues).toFixed(2)}`);
+                    }
+                } else {
+                    console.warn('⚠️ No cached years available, falling back to global scales');
+                    xValues = [globalScales[bubbleXVar]?.min || 0, globalScales[bubbleXVar]?.max || 1];
+                    yValues = [globalScales[bubbleYVar]?.min || 0, globalScales[bubbleYVar]?.max || 1];
+                }
+            }
+            
+            // Calculate ranges with padding for better visualization
+            const xRange = xValues.length > 0 ? calculateAxisRange(xValues, 0.15) : { min: 0, max: 1 };
+            const yRange = yValues.length > 0 ? calculateAxisRange(yValues, 0.15) : { min: 0, max: 1 };
+            
+            console.log(`✅ Calculated ranges - X(${bubbleXVar}): [${xRange.min.toFixed(2)}, ${xRange.max.toFixed(2)}], Y(${bubbleYVar}): [${yRange.min.toFixed(2)}, ${yRange.max.toFixed(2)}]`);
+            
+            return { xRange, yRange };
+        }
+        
+        /**
+         * Main function to update bubble chart visualization
+         */
+        function updateBubbleChart() {
+            if (!currentYearlyData || !currentClustering) {
+                console.log('Missing data for bubble chart');
+                clearBubbleChart();
+                return;
+            }
+            
+            // If no regions selected, show all regions
+            const regionsToShow = selectedRegionNames.length === 0 
+                ? Object.keys(regionCoords)
+                : selectedRegionNames;
+            
+            console.log(`Bubble chart - Regions to show: ${regionsToShow.length}`, regionsToShow);
+            
+            // Verify scales are available
+            if (!globalScalesCalculated) {
+                console.warn('⚠️ Global scales not yet calculated - waiting...');
+                return;
+            }
+            
+            const sizeScale = globalScales[bubbleSizeVar];
+            if (!sizeScale) {
+                console.log('No scale for size variable:', bubbleSizeVar);
+                clearBubbleChart();
+                return;
+            }
+            
+            console.log(`Updating bubble chart: ${regionsToShow.length} regions with vars X=${bubbleXVar}, Y=${bubbleYVar}, Size=${bubbleSizeVar}`);
+            
+            const isTemporalMode = true; // Always in temporal mode
+            const datasets = [];
+            
+            regionsToShow.forEach(region => {
+                const regionData = getRegionBubbleData(region);
+                if (!regionData) {
+                    console.warn(`No data for region: ${region}`);
+                    return;
+                }
+                
+                const { x: xVal, y: yVal, size: sizeVal } = regionData;
+                
+                const regionIdx = currentClustering.regions.indexOf(region);
+                const clusterId = regionIdx >= 0 ? currentClustering.clusters[regionIdx] : 0;
+                
+                // Use cluster color for bubble
+                const fillColor = clusterColors[clusterId % clusterColors.length];
+                const isClicked = clickedBubbleRegions.includes(region);
+                const opacity = (clickedBubbleRegions.length === 0 || isClicked) ? 1.0 : 0.3;
+                const radius = calculateBubbleRadius(sizeVal);
+                
+                datasets.push({
+                    label: region,
+                    data: [{
+                        x: xVal,
+                        y: yVal,
+                        r: radius
+                    }],
+                    backgroundColor: hexToRgba(fillColor, opacity),
+                    borderColor: fillColor,
+                    borderWidth: isClicked ? 4 : 3,
+                    hoverBorderWidth: 5,
+                    hoverBorderColor: '#2c3e50',
+                    // Ensure Chart.js renders the bubble radius even when not hovered
+                    pointRadius: radius,
+                    pointHoverRadius: Math.max(radius * 1.2, radius + 2),
+                    regionName: region,
+                    clip: false
+                });
+                
+                // Show trail if we have trail data, regardless of current mode
+                if (isClicked && bubbleTrails[region]?.length > 0) {
+                    const trail = bubbleTrails[region];
+                    
+                    const trailPoints = trail.map(point => ({
+                        x: point.x,
+                        y: point.y,
+                        r: calculateBubbleRadius(point.size) * 0.6
+                    }));
+                    
+                    // Draw a connecting line between historical trail points using a line dataset
+                    datasets.push({
+                        type: 'line',
+                        label: `${region} Trail Line`,
+                        data: trailPoints,
+                        backgroundColor: 'transparent',
+                        borderColor: hexToRgba(fillColor, 0.8),
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        showLine: true,
+                        fill: false,
+                        tension: 0.25,
+                        borderDash: [],  // Solid line
+                        clip: false,
+                        // draw the line under bubbles by giving a lower order
+                        order: 1
+                    });
+
+                    // Draw the small historical points on top of the connecting line
+                    datasets.push({
+                        type: 'bubble',
+                        label: `${region} Trail Points`,
+                        data: trailPoints,
+                        backgroundColor: hexToRgba(fillColor, 0.35),
+                        borderColor: hexToRgba(fillColor, 0.65),
+                        borderWidth: 1,
+                        // Use per-point radii from `trailPoints[].r` so trail markers are visible
+                        pointRadius: trailPoints.map(p => p.r),
+                        pointHoverRadius: trailPoints.map(p => Math.max(p.r * 1.2, p.r + 1)),
+                        showLine: false,
+                        clip: false,
+                        order: 2
+                    });
+                }
+            });
+            
+            // Calculate dynamic axis ranges based on current mode and selection
+            const { xRange, yRange } = calculateDynamicAxisRanges();
+            const isLogX = document.getElementById('bubble-log-scale-x')?.checked || false;
+            const isLogY = document.getElementById('bubble-log-scale-y')?.checked || false;
+            
+            // Update scale type first
+            bubbleChart.options.scales.x.type = isLogX ? 'logarithmic' : 'linear';
+            bubbleChart.options.scales.y.type = isLogY ? 'logarithmic' : 'linear';
+            
+            // Apply calculated ranges to axes
+            // For logarithmic scale, ensure min is positive (at least 0.1)
+            // For linear scale, use the calculated min directly
+            const xMin = isLogX ? Math.max(0.1, xRange.min) : xRange.min;
+            const yMin = isLogY ? Math.max(0.1, yRange.min) : yRange.min;
+            const xMax = xRange.max;
+            const yMax = yRange.max;
+            
+            // Set axis limits
+            bubbleChart.options.scales.x.min = xMin;
+            bubbleChart.options.scales.x.max = xMax;
+            bubbleChart.options.scales.y.min = yMin;
+            bubbleChart.options.scales.y.max = yMax;
+            
+            // Disable auto-scaling to respect our calculated ranges
+            bubbleChart.options.scales.x.beginAtZero = false;
+            bubbleChart.options.scales.y.beginAtZero = false;
+            
+            console.log(`🔒 ASSI AGGIORNATI: X(${bubbleXVar})[${xMin.toFixed(2)} → ${xMax.toFixed(2)}], Y(${bubbleYVar})[${yMin.toFixed(2)} → ${yMax.toFixed(2)}]`);
+            console.log(`   Raw ranges before log adjustment: X[${xRange.min.toFixed(2)} → ${xRange.max.toFixed(2)}], Y[${yRange.min.toFixed(2)} → ${yRange.max.toFixed(2)}]`);
+            
+            bubbleChart.data.datasets = datasets;
+            
+            // Update axis labels BEFORE updating chart
+            updateBubbleAxisLabels();
+            
+            // Ensure each dataset has pointRadius set (use per-point `r` when available)
+            bubbleChart.data.datasets = datasets;
+            bubbleChart.data.datasets.forEach(ds => {
+                if ((!ds.pointRadius || ds.pointRadius === 0) && ds.data && ds.data.length > 0) {
+                    // If data items have `r`, use them as point radii
+                    const radii = ds.data.map(d => d.r !== undefined ? d.r : (d.r === 0 ? 0 : null)).filter(r => r !== null);
+                    if (radii.length === ds.data.length) {
+                        ds.pointRadius = radii;
+                        ds.pointHoverRadius = radii.map(r => Math.max(r * 1.2, r + 1));
+                    }
+                }
+            });
+
+            // Update axis labels BEFORE updating chart
+            updateBubbleAxisLabels();
+
+            // Update chart with 'none' to avoid Chart.js resets that may alter custom radii
+            bubbleChart.update('none');
+
+            // Diagnostic log to inspect datasets after update
+            try {
+                const summary = bubbleChart.data.datasets.slice(0, 12).map(d => ({
+                    label: d.label,
+                    points: d.data.length,
+                    firstR: d.data && d.data[0] ? (d.data[0].r !== undefined ? d.data[0].r : null) : null,
+                    pointRadius: d.pointRadius,
+                    bg: d.backgroundColor
+                }));
+                console.log(`Bubble chart updated with ${bubbleChart.data.datasets.length} datasets using dynamic axes`, summary);
+            } catch (e) {
+                console.log('Bubble chart updated (could not serialize datasets summary)');
+            }
+        }
+        
+        /**
+         * Update bubble chart axis labels
+         */
+        function updateBubbleAxisLabels() {
+            const xLabelFull = indicatorNames[bubbleXVar] || bubbleXVar;
+            const yLabelFull = indicatorNames[bubbleYVar] || bubbleYVar;
+            const sizeLabelFull = indicatorNames[bubbleSizeVar] || bubbleSizeVar;
+
+            // Truncate readable labels at first '(' to match dropdown display
+            function truncateAtParen(str) {
+                if (!str) return str;
+                const idx = str.indexOf('(');
+                return idx > 0 ? str.substring(0, idx).trim() : str;
+            }
+
+            const xLabel = truncateAtParen(xLabelFull);
+            const yLabel = truncateAtParen(yLabelFull);
+            const sizeLabel = truncateAtParen(sizeLabelFull);
+            
+            if (!bubbleChart.options.scales.x.title) {
+                bubbleChart.options.scales.x.title = { display: true };
+            }
+            if (!bubbleChart.options.scales.y.title) {
+                bubbleChart.options.scales.y.title = { display: true };
+            }
+            
+            bubbleChart.options.scales.x.title.text = xLabel;
+            bubbleChart.options.scales.x.title.display = true;
+            // Show only the Y variable readable name (truncate removed the parenthetical)
+            bubbleChart.options.scales.y.title.text = yLabel;
+            bubbleChart.options.scales.y.title.display = true;
+        }
+        
+        /**
+         * Clear bubble chart
+         */
+        function clearBubbleChart() {
+            bubbleChart.data.datasets = [];
+            bubbleHoverState.active = false;
+            bubbleChart.update('none');
+        }
+
+        // ============================================
+        // SERVER & DATA LOADING
+        // ============================================
+
+        // Fetch clustering data from server
+        async function loadClusteringData() {
+            const method = 'pca';  // Fixed to PCA
+            const clustering = 'kmeans';  // Fixed to K-means
+            const kMode = document.getElementById('k-mode-select').value;
+            const isManualK = kMode !== 'auto';
+            const manualK = isManualK ? parseInt(kMode) : null;
+            
+            console.log(`📊 Loading clustering: mode=${kMode}, isManualK=${isManualK}, manualK=${manualK}, isOverviewMode=${isOverviewMode}`);
+
+            // Ensure the year display matches the current overview/temporal mode
+            setYearDisplayVisibility();
+            
+            // Do NOT reset global scales - they should be calculated once and reused
+            
+            showLoading(true);
+            
+            try {
+                // Check if we should load in overview mode (single year) or temporal mode
+                if (isOverviewMode) {
+                    // Overview mode - load single year clustering
+                    let endpoint;
+                    if (isManualK && manualK && !isNaN(manualK)) {
+                        console.log(`📍 Overview mode with manual K=${manualK}`);
+                        endpoint = `${SERVER_BASE}/clustering_manual?year=2022&method=${method}&clustering=${clustering}&k=${manualK}`;
+                    } else {
+                        console.log('📍 Overview mode with auto K');
+                        endpoint = `${SERVER_BASE}/clustering?method=${method}&clustering=${clustering}`;
+                    }
+                    
+                    console.log(`🌐 Fetching: ${endpoint}`);
+                    const response = await fetch(endpoint);
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        const uniqueClusters = new Set(data.clusters);
+                        console.log(`📦 Server response - Requested K=${manualK || 'auto'}, Received ${uniqueClusters.size} clusters:`, Array.from(uniqueClusters).sort((a,b)=>a-b));
+                        console.log(`📋 Server K field: k_optimal=${data.k_optimal}, k_used=${data.k_used || 'N/A'}`);
+                        currentClustering = data;
+                        updateClusterChart(data);
+                        loadYearlyData(2022);
+                    } else {
+                        alert('Error loading clustering: ' + data.message);
+                    }
+                } else {
+                    // Temporal mode
+                    if (isManualK && manualK && !isNaN(manualK)) {
+                        console.log(`📍 Temporal mode with manual K=${manualK}`);
+                        // Manual K + Temporal: load each year with manual K
+                        const df = await fetch(`${SERVER_BASE}/yearly_data?year=2022`);
+                        const tempData = await df.json();
+                        
+                        // Get all years from dataset
+                        const years = [];
+                        for (let year = 2002; year <= 2050; year++) {
+                            years.push(year);
+                        }
+                        
+                        console.log(`🔄 Loading ${years.length} years with K=${manualK}...`);
+                        // Load clustering for each year with manual K
+                        const timeseries = [];
+                        for (const year of years) {
+                            const response = await fetch(`${SERVER_BASE}/clustering_manual?year=${year}&method=${method}&clustering=${clustering}&k=${manualK}`);
+                            const data = await response.json();
+                            if (data.status === 'success') {
+                                if (year === 2002) {
+                                    // Log first year as sample
+                                    const uniqueClusters = new Set(data.clusters);
+                                    console.log(`📦 Year ${year} - Requested K=${manualK}, Received ${uniqueClusters.size} clusters:`, Array.from(uniqueClusters).sort((a,b)=>a-b));
+                                    console.log(`📋 Server response fields: k_optimal=${data.k_optimal}, k_used=${data.k_used || 'N/A'}`);
+                                }
+                                timeseries.push(data);
+                            }
+                        }
+                        
+                        if (timeseries.length > 0) {
+                            timeseriesData = timeseries;
+                            // Compute cluster global ranges for fixed axes in temporal mode
+                            computeClusterGlobalRanges();
+                            
+                            // Preload all years to calculate global scales
+                            if (!globalScalesCalculated) {
+                                console.log('Preloading all years to calculate global scales...');
+                                await preloadAllYearsForScales(years);
+                            }
+                            
+                            setupTimeline();
+                            updateClusterChart(timeseriesData[0]);
+                            loadYearlyData(timeseriesData[0].year);
+                        } else {
+                            alert('Error loading manual timeseries');
+                        }
+                    } else {
+                        console.log('📍 Temporal mode with auto K (precomputed)');
+                        // Auto K + Temporal: use precomputed
+                        const response = await fetch(`${SERVER_BASE}/clustering_timeseries?method=${method}&clustering=${clustering}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            timeseriesData = data.timeseries || [];
+
+                            // Compute cluster global ranges for fixed axes in temporal mode
+                            computeClusterGlobalRanges();
+
+                            // Ensure timeseriesData contains entries up to 2050 when possible
+                            try {
+                                // Build set of existing years
+                                const existing = new Set(timeseriesData.map(ts => ts.year));
+
+                                // Determine candidate k to use for missing-year requests (try using k from first entry)
+                                const candidateK = (timeseriesData[0] && timeseriesData[0].k_optimal) || data.k_optimal || null;
+
+                                const missingYears = [];
+                                for (let y = 2002; y <= 2050; y++) {
+                                    if (!existing.has(y)) missingYears.push(y);
+                                }
+
+                                if (missingYears.length > 0) {
+                                    console.log(`Attempting to fetch ${missingYears.length} missing years for timeline (may be slow)...`);
+                                    for (const year of missingYears) {
+                                        try {
+                                            // Try to fetch clustering for the missing year using clustering_manual if k available
+                                            let resp, respJson;
+                                            if (candidateK) {
+                                                resp = await fetch(`${SERVER_BASE}/clustering_manual?year=${year}&method=${method}&clustering=${clustering}&k=${candidateK}`);
+                                                respJson = await resp.json();
+                                            } else {
+                                                // If no k candidate, skip fetching per-year clustering (server may not support auto per-year endpoint)
+                                                console.warn('No candidate k available; skipping per-year clustering fetch for year', year);
+                                                continue;
+                                            }
+
+                                            if (respJson && respJson.status === 'success') {
+                                                timeseriesData.push(respJson);
+                                                existing.add(year);
+                                                // Cache yearly data for scales
+                                                if (respJson.year && respJson.data) allYearsDataCache[respJson.year] = respJson.data;
+                                            } else {
+                                                console.warn('Failed to fetch clustering for year', year, respJson && respJson.message);
+                                            }
+                                        } catch (err) {
+                                            console.warn('Error fetching clustering for year', year, err);
+                                        }
+                                    }
+
+                                    // Sort timeseriesData by year ascending
+                                    timeseriesData.sort((a, b) => a.year - b.year);
+                                }
+                            } catch (err) {
+                                console.error('Error while augmenting timeseriesData:', err);
+                            }
+
+                            // Preload all years to calculate global scales
+                            if (!globalScalesCalculated) {
+                                console.log('Preloading all years to calculate global scales (extended to 2002-2050)...');
+                                const fullYears = [];
+                                for (let y = 2002; y <= 2050; y++) fullYears.push(y);
+                                await preloadAllYearsForScales(fullYears);
+                            }
+
+                            if (timeseriesData.length === 0) {
+                                alert('Error loading timeseries: no data returned');
+                            } else {
+                                setupTimeline();
+                                updateClusterChart(timeseriesData[0]);
+                                loadYearlyData(timeseriesData[0].year);
+                            }
+                        } else {
+                            alert('Error loading timeseries: ' + data.message);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to load clustering data. Make sure the server is running.');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadYearlyData(year) {
+            try {
+                console.log('Loading yearly data for year:', year);
+                const response = await fetch(`${SERVER_BASE}/yearly_data?year=${year}`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentYearlyData = data.data;
+                    console.log('Yearly data loaded:', currentYearlyData.length, 'rows');
+                    console.log('Sample data:', currentYearlyData.slice(0, 3));
+                    
+                    // Don't automatically initialize all regions as selected
+                    // User should manually select regions they want to analyze
+                    
+                    // Build indicator names map
+                    indicatorNames = {};
+                    currentYearlyData.forEach(row => {
+                        if (row.indicator && row.data_type && !indicatorNames[row.data_type]) {
+                            // Extract name before "(" if present
+                            const fullName = row.indicator;
+                            const nameBeforeParen = fullName.split('(')[0].trim();
+                            indicatorNames[row.data_type] = nameBeforeParen;
+                        }
+                    });
+                    console.log('Indicator names mapped:', Object.keys(indicatorNames).length);
+                    console.log('Sample mappings:', Object.entries(indicatorNames).slice(0, 5));
+                    
+                    // Update map variable dropdown
+                    populateVariableDropdown();
+                    
+                    // Calculate global scales if not already done (for non-temporal mode)
+                    if (!globalScalesCalculated) {
+                        calculateGlobalScales();
+                    }
+                    
+                    // Update trails for clicked regions with this year's position
+                    try { updateBubbleTrails(year); } catch (e) { console.warn('updateBubbleTrails failed:', e); }
+
+                    updateLinkedViews();
+                } else {
+                    console.error('Error loading yearly data:', data.message);
+                }
+            } catch (error) {
+                console.error('Error fetching yearly data:', error);
+            }
+        }
+        
+        /**
+         * Preload all years to calculate global scales once
+         */
+        async function preloadAllYearsForScales(years) {
+            try {
+                console.log('⏳ Calcolo scale globali da', years.length, 'anni (2002-2050)...');
+                
+                // Keep existing scales if already calculated - don't reset
+                if (globalScalesCalculated) {
+                    console.log('✅ Scale già calcolate - riutilizzo valori salvati');
+                    return;
+                }
+                
+                // Initialize globalScales only if empty
+                if (Object.keys(globalScales).length === 0) {
+                    globalScales = {};
+                }
+                
+                // Fetch data for all years
+                for (const year of years) {
+                    const response = await fetch(`${SERVER_BASE}/yearly_data?year=${year}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        const yearData = data.data;
+                        
+                        // Store in cache for later use by calculateDynamicAxisRanges
+                        allYearsDataCache[year] = yearData;
+                        
+                        const variables = [...new Set(yearData.map(row => row.data_type))];
+                        
+                        // For each variable, track global min=0 and max across all years
+                        variables.forEach(variable => {
+                            const values = yearData
+                                .filter(row => row.data_type === variable)
+                                .map(row => row.value)
+                                .filter(v => v !== null && v !== undefined);
+                            
+                            if (values.length > 0) {
+                                const currentMax = Math.max(...values);
+                                
+                                if (!globalScales[variable]) {
+                                    // First time - set min to 0, max to current, and pre-calculate axis max
+                                    globalScales[variable] = {
+                                        min: 0,
+                                        max: currentMax,
+                                        axisMax: currentMax * 1.15  // Pre-calculate axis max with 15% buffer
+                                    };
+                                } else {
+                                    // Update max and recalculate axis max
+                                    globalScales[variable].max = Math.max(globalScales[variable].max, currentMax);
+                                    globalScales[variable].axisMax = globalScales[variable].max * 1.15;
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                globalScalesCalculated = true;
+                console.log('✅ SCALE GLOBALI SALVATE per', Object.keys(globalScales).length, 'variabili');
+                console.log('📊 Range fissi salvati (riutilizzati per sempre):');
+                Object.entries(globalScales).forEach(([variable, scale]) => {
+                    console.log(`   ${variable}: max=${scale.max.toFixed(2)} → axisMax=${scale.axisMax.toFixed(2)}`);
+                });
+            } catch (error) {
+                console.error('Error preloading years for scales:', error);
+            }
+        }
+        
+        /**
+         * Update bubble trails for temporal animation
+         */
+        // Compute global cluster axes ranges across the loaded timeseriesData
+        function computeClusterGlobalRanges() {
+            if (!timeseriesData || timeseriesData.length === 0) return;
+            let xs = [];
+            let ys = [];
+            timeseriesData.forEach(ts => {
+                const pts = ts.points || [];
+                const regs = ts.regions || [];
+                if (pts.length === regs.length) {
+                    pts.forEach(p => { xs.push(p[0]); ys.push(p[1]); });
+                } else {
+                    // If server returned centroids only, expand using clusters mapping
+                    const clusters = ts.clusters || [];
+                    const centroidMap = {};
+                    for (let i=0;i<pts.length;i++) centroidMap[i] = pts[i];
+                    for (let i=0;i<clusters.length;i++) {
+                        const cid = clusters[i];
+                        const cp = centroidMap[cid];
+                        if (cp && cp.length === 2 && isFinite(cp[0]) && isFinite(cp[1])) {
+                            xs.push(cp[0]); ys.push(cp[1]);
+                        } else {
+                            // Missing centroid for this cluster-year; skip instead of using 0,0
+                            console.warn('Missing centroid for cluster', cid, 'in year', ts.year);
+                        }
+                    }
+                }
+            });
+
+            if (xs.length > 0) {
+                const xmin = Math.min(...xs);
+                const xmax = Math.max(...xs);
+                const ymin = Math.min(...ys);
+                const ymax = Math.max(...ys);
+                clusterGlobalRanges = { xmin, xmax, ymin, ymax };
+                clusterGlobalRangesCalculated = true;
+                console.log('📐 clusterGlobalRanges computed:', clusterGlobalRanges);
+            }
+        }
+
+        function updateBubbleTrails(year) {
+            const isTemporalMode = true; // Always in temporal mode
+            if (!isTemporalMode || !currentYearlyData) return;
+            
+            clickedBubbleRegions.forEach(clickedRegion => {
+                if (!bubbleTrails[clickedRegion]) {
+                    bubbleTrails[clickedRegion] = [];
+                }
+                
+                const regionData = getRegionBubbleData(clickedRegion);
+                if (!regionData) return;
+                
+                bubbleTrails[clickedRegion].push({
+                    x: regionData.x,
+                    y: regionData.y,
+                    size: regionData.size,
+                    year: year
+                });
+            });
+        }
+
+        /**
+         * Clear all historical trail lines and trail points produced by clicks
+         */
+        function clearTrails() {
+            bubbleTrails = {};
+            clickedBubbleRegions = [];
+            console.log('Cleared bubble trails and trail points');
+            // Rebuild/update charts and linked views
+            updateLinkedViews();
+        }
+
+        /**
+         * Build a full historical trail for a region using cached yearly data (if available)
+         * It collects positions (x,y,size,year) from earliest cached year up to current year.
+         */
+        function buildFullTrailForRegion(regionName) {
+            // Initialize
+            bubbleTrails[regionName] = [];
+
+            console.log(`🔍 Building trail for ${regionName}, vars: X=${bubbleXVar}, Y=${bubbleYVar}, Size=${bubbleSizeVar}`);
+
+            // Prefer cached all years if available
+            const years = Object.keys(allYearsDataCache).map(y => parseInt(y)).sort((a,b)=>a-b);
+            console.log(`📅 Found ${years.length} cached years:`, years.length > 0 ? `${years[0]} to ${years[years.length-1]}` : 'none');
+            
+            if (years.length > 0) {
+                years.forEach(year => {
+                    const yearData = allYearsDataCache[year];
+                    if (!Array.isArray(yearData)) return;
+                    const xRow = yearData.find(r => r.region === regionName && r.data_type === bubbleXVar);
+                    const yRow = yearData.find(r => r.region === regionName && r.data_type === bubbleYVar);
+                    const sRow = yearData.find(r => r.region === regionName && r.data_type === bubbleSizeVar);
+                    if (xRow && yRow) {
+                        bubbleTrails[regionName].push({
+                            x: xRow.value,
+                            y: yRow.value,
+                            size: sRow ? sRow.value : 0,
+                            year: year
+                        });
+                    }
+                });
+                console.log(`✅ Trail built with ${bubbleTrails[regionName].length} points from cache`);
+            } else if (timeseriesData && timeseriesData.length > 0) {
+                // Fallback: use timeseriesData points' positions (if available)
+                timeseriesData.forEach(ts => {
+                    const year = ts.year;
+                    // Find index of region in ts.regions
+                    const idx = ts.regions ? ts.regions.indexOf(regionName) : -1;
+                    if (idx >= 0 && ts.points && ts.points[idx]) {
+                        const pt = ts.points[idx];
+                        // size unknown here; attempt to look up in allYearsDataCache (unlikely), else 0
+                        let sizeVal = 0;
+                        if (allYearsDataCache[year]) {
+                            const sRow = allYearsDataCache[year].find(r => r.region === regionName && r.data_type === bubbleSizeVar);
+                            if (sRow) sizeVal = sRow.value;
+                        }
+                        bubbleTrails[regionName].push({ x: pt[0], y: pt[1], size: sizeVal, year: year });
+                    }
+                });
+                console.log(`✅ Trail built with ${bubbleTrails[regionName].length} points from timeseriesData fallback`);
+            } else {
+                console.warn('⚠️ No data available to build trail - neither allYearsDataCache nor timeseriesData');
+            }
+            
+            if (bubbleTrails[regionName].length === 0) {
+                console.error(`❌ Trail for ${regionName} is EMPTY after build attempt`);
+            }
+        }
+
+        function updateClusterChart(data) {
+                    console.log('🔁 updateClusterChart called with data keys:', Object.keys(data || {}));
+                    console.log('🔢 clustering sizes - regions:', (data.regions||[]).length, 'points:', (data.points||[]).length, 'clusters:', (data.clusters||[]).length);
+                    console.log('🔎 sample points:', (data.points||[]).slice(0,5));
+                    currentClustering = data;
+            
+            // Ensure we have a per-region point for each region.
+            // Some server responses include per-region coordinates (points.length === regions.length),
+            // others may include only cluster centroids (points.length === number of clusters).
+            let perRegionPoints = [];
+            const numRegions = (data.regions || []).length;
+            const numPoints = (data.points || []).length;
+            const uniqueClusters = Array.from(new Set(data.clusters || [])).sort((a,b)=>a-b);
+
+            if (numPoints === numRegions) {
+                perRegionPoints = data.points.slice();
+            } else if (numPoints === uniqueClusters.length) {
+                console.warn('⚠️ Received centroid-only points; expanding centroids to per-region positions');
+                // Assume data.points are ordered by cluster id (0..k-1)
+                const centroidMap = {};
+                for (let ci = 0; ci < data.points.length; ci++) centroidMap[ci] = data.points[ci];
+                for (let i = 0; i < numRegions; i++) {
+                    const cid = data.clusters[i];
+                    const cp = centroidMap[cid];
+                    if (cp && cp.length === 2 && isFinite(cp[0]) && isFinite(cp[1])) {
+                        perRegionPoints.push(cp);
+                    } else {
+                        // If centroid missing, push null and warn - will be filtered out for scaling/plotting
+                        perRegionPoints.push(null);
+                        console.warn('Missing centroid for cluster', cid, 'while expanding centroids for regions');
+                    }
+                }
+            } else {
+                console.error('❌ Unexpected points/regions sizes:', numPoints, numRegions);
+                // Fallback: fill with nulls to avoid invalid zeros
+                for (let i = 0; i < numRegions; i++) perRegionPoints.push(null);
+            }
+
+            // Group points by cluster
+            const clusterGroups = {};
+            for (let i = 0; i < numRegions; i++) {
+                const clusterId = data.clusters[i];
+                if (!clusterGroups[clusterId]) {
+                    clusterGroups[clusterId] = {
+                        points: [],
+                        regions: []
+                    };
+                }
+                clusterGroups[clusterId].points.push(perRegionPoints[i]);
+                clusterGroups[clusterId].regions.push(data.regions[i]);
+            }
+            
+            // Create datasets for each cluster
+            const datasets = [];
+            Object.keys(clusterGroups).sort((a, b) => parseInt(a) - parseInt(b)).forEach((clusterId, idx) => {
+                const group = clusterGroups[clusterId];
+                
+                // Create arrays for styling (radius and border)
+                const pointRadii = group.regions.map(region => 
+                    selectedRegionNames.includes(region) ? 8 : 5
+                );
+                const pointBorderWidths = group.regions.map(region => 
+                    selectedRegionNames.includes(region) ? 3 : 0
+                );
+                
+                datasets.push({
+                    label: `Cluster ${parseInt(clusterId) + 1}`,
+                    data: group.points.map(p => ({ x: p[0], y: p[1] })),
+                    backgroundColor: clusterColors[idx % clusterColors.length],
+                    pointRadius: pointRadii,
+                    pointBorderWidth: pointBorderWidths,
+                    pointBorderColor: '#000',
+                    pointHoverRadius: 7,
+                    pointHoverBorderWidth: 2,
+                    regionNames: group.regions
+                });
+            });
+            
+            clusterChart.data.datasets = datasets;
+
+            // Auto-scale axes to fit all points, or use precomputed global ranges in temporal mode
+            try {
+                // collect only valid points (exclude nulls)
+                const allPoints = [].concat(...Object.values(clusterGroups).map(g => g.points)).filter(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]));
+                if (allPoints.length > 0) {
+                    if (!isOverviewMode && clusterForceOverviewInTemporal && clusterGlobalRangesCalculated) {
+                        // Use fixed global ranges computed from timeseries
+                        const xmin = clusterGlobalRanges.xmin;
+                        const xmax = clusterGlobalRanges.xmax;
+                        const ymin = clusterGlobalRanges.ymin;
+                        const ymax = clusterGlobalRanges.ymax;
+                        const padX = (xmax - xmin) * 0.08 || 1;
+                        const padY = (ymax - ymin) * 0.08 || 1;
+                        clusterChart.options.scales.x.min = xmin - padX;
+                        clusterChart.options.scales.x.max = xmax + padX;
+                        clusterChart.options.scales.y.min = ymin - padY;
+                        clusterChart.options.scales.y.max = ymax + padY;
+                    } else {
+                        const xs = allPoints.map(p => p[0]);
+                        const ys = allPoints.map(p => p[1]);
+                        const xmin = Math.min(...xs);
+                        const xmax = Math.max(...xs);
+                        const ymin = Math.min(...ys);
+                        const ymax = Math.max(...ys);
+                        const padX = (xmax - xmin) * 0.08 || 1;
+                        const padY = (ymax - ymin) * 0.08 || 1;
+                        clusterChart.options.scales.x.min = xmin - padX;
+                        clusterChart.options.scales.x.max = xmax + padX;
+                        clusterChart.options.scales.y.min = ymin - padY;
+                        clusterChart.options.scales.y.max = ymax + padY;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not autoscale cluster axes', e);
+            }
+
+            clusterChart.update('none');
+            
+            // Update K display
+            const kDisplay = document.getElementById('k-display');
+            const kMode = document.getElementById('k-mode-select').value;
+            if (kMode === 'auto') {
+                kDisplay.textContent = `(Num. of cluster: ${data.k_optimal} )`;
+            } else {
+                kDisplay.textContent = `(Num. of cluster: ${data.k_optimal} )`;
+            }
+            
+            // Update map
+            updateMap(data);
+            
+            // Immediately update map styles to show cluster colors
+            updateMapStyles();
+            
+            // Store current dataset for brush selection
+            // Use per-region points (expanded from centroids when necessary)
+            currentDataSet = data.regions.map((region, idx) => ({
+                name: region,
+                cluster: data.clusters[idx],
+                point: (perRegionPoints && perRegionPoints[idx] && Array.isArray(perRegionPoints[idx]) && perRegionPoints[idx].length===2) ? perRegionPoints[idx] : null
+            }));
+        }
+
+        function updateSelectionHighlight() {
+            if (!currentClustering) return;
+            
+            // Update point styles based on selection
+            clusterChart.data.datasets.forEach(dataset => {
+                const pointRadii = [];
+                const pointBorderWidths = [];
+                
+                dataset.regionNames.forEach(region => {
+                    const isSelected = selectedRegionNames.includes(region);
+                    pointRadii.push(isSelected ? 8 : 5);
+                    pointBorderWidths.push(isSelected ? 3 : 0);
+                });
+                
+                dataset.pointRadius = pointRadii;
+                dataset.pointBorderWidth = pointBorderWidths;
+            });
+            
+            clusterChart.update('none');
+            
+            // Update map styles
+            updateMapStyles();
+            
+            // Update linked views
+            updateLinkedViews();
+        }
+
+        function updateMap(data) {
+            if (!geoJsonLayer) return;
+            
+            console.log('Updating map with clustering data');
+            updateMapStyles();
+        }
+        
+        function updateMapStyles() {
+            if (!geoJsonLayer || !currentClustering) return;
+            
+            // Count unique clusters for debugging
+            const uniqueClusters = new Set(currentClustering.clusters);
+            console.log(`🗺️ Updating map styles with ${uniqueClusters.size} clusters:`, Array.from(uniqueClusters).sort((a,b)=>a-b));
+            
+            // Remove existing selection layers if any
+            if (window.selectionLayer) {
+                try { map.removeLayer(window.selectionLayer); } catch (e) {}
+                window.selectionLayer = null;
+            }
+            if (window.selectionLayerOuter) {
+                try { map.removeLayer(window.selectionLayerOuter); } catch (e) {}
+                window.selectionLayerOuter = null;
+            }
+            
+            // Create features for selected regions with black border
+            const selectedFeatures = [];
+            
+            geoJsonLayer.eachLayer(layer => {
+                const regionName = getRegionNameFromFeature(layer.feature);
+                const regionIdx = currentClustering.regions.indexOf(regionName);
+                
+                if (regionIdx >= 0) {
+                    const clusterId = currentClustering.clusters[regionIdx];
+                    const clusterColor = clusterColors[clusterId % clusterColors.length];
+                    
+                    // Default: use cluster color as fill
+                    let fillColor = clusterColor;
+                    let fillOpacity = 0.5;
+                    
+                    // If a variable is selected, color by variable value instead
+                    if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                        const value = getRegionVariableValue(regionName, selectedVariable);
+                        // If value is missing, mark region as 'no data' with gray
+                        if (value === null || value === undefined || Number.isNaN(value)) {
+                            fillColor = '#e6e7eb';
+                            fillOpacity = 0.6;
+                        } else if (globalScales[selectedVariable]) {
+                            const scale = globalScales[selectedVariable];
+                            const range = scale.max - scale.min;
+                            const rawNorm = range > 0 ? (value - scale.min) / range : 0.5;
+                            const normalized = Math.max(0, Math.min(1, rawNorm));
+                            fillColor = getHeatmapColor(normalized);
+                            fillOpacity = 0.7;
+                        }
+                    }
+                    
+                    // Check if region is selected
+                    const isSelected = selectedRegionNames.includes(regionName);
+                    
+                    // Base style with cluster color border
+                    layer.setStyle({
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity,
+                        weight: 3,
+                        opacity: 1,
+                        color: clusterColor
+                    });
+                    
+                    // If selected, add to selection features for black inner border
+                    if (isSelected) {
+                        selectedFeatures.push(layer.feature);
+                    }
+                }
+            });
+            
+            // Create enhanced double border for selected regions (white + black)
+            if (selectedFeatures.length > 0) {
+                // Outer white border for contrast
+                window.selectionLayerOuter = L.geoJSON({
+                    type: 'FeatureCollection',
+                    features: selectedFeatures
+                }, {
+                    style: {
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        weight: 6,
+                        opacity: 1,
+                        color: '#ffffff',
+                        interactive: false
+                    },
+                    pane: 'overlayPane'
+                }).addTo(map);
+
+                // Inner black border
+                window.selectionLayer = L.geoJSON({
+                    type: 'FeatureCollection',
+                    features: selectedFeatures
+                }, {
+                    style: {
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        weight: 3,
+                        opacity: 1,
+                        color: '#000000',
+                        interactive: false
+                    },
+                    pane: 'overlayPane'
+                }).addTo(map);
+            }
+
+            // Build/update legend based on currently selected variable
+            try {
+                buildMapLegend(selectedVariable);
+            } catch (e) {
+                console.warn('Failed to build map legend:', e);
+            }
+            
+            // Force map redraw to ensure cluster color changes are visible
+            if (map) {
+                map.invalidateSize();
+                console.log('🔄 Map redraw forced');
+            }
+        }
+
+        /**
+         * Build a vertical legend on the left side of the map showing color bins and their ranges
+         * Adapts to temporal mode by computing min/max across allYearsDataCache when available
+         */
+        function buildMapLegend(variable) {
+            // Remove existing legend if any
+            const existing = document.getElementById('map-legend');
+            if (existing) existing.remove();
+
+            if (!variable || variable === 'none') return; // nothing to show
+
+            const container = document.getElementById('italyMap');
+            if (!container) return;
+
+            // Determine min/max based on mode
+            let min = null, max = null;
+
+            if (!isOverviewMode && Object.keys(allYearsDataCache).length > 0) {
+                // Temporal: aggregate across all cached years
+                const values = [];
+                Object.keys(allYearsDataCache).forEach(y => {
+                    const arr = allYearsDataCache[y];
+                    arr.forEach(r => {
+                        if (r.data_type === variable && r.value !== null && r.value !== undefined) values.push(r.value);
+                    });
+                });
+                if (values.length > 0) {
+                    min = Math.min(...values);
+                    max = Math.max(...values);
+                }
+            }
+
+            if ((min === null || max === null) && globalScales[variable]) {
+                min = globalScales[variable].min;
+                max = globalScales[variable].max;
+            }
+
+            if (min === null || max === null) return; // no data available
+
+            // Ensure a non-zero range
+            if (min === max) {
+                const pad = Math.abs(min) * 0.05 || 1;
+                min = min - pad;
+                max = max + pad;
+            }
+
+            const steps = 7;
+            const range = max - min;
+
+            // Helper to format numbers
+            function fmt(v) {
+                if (Math.abs(v) >= 1000) return v.toFixed(0);
+                if (Math.abs(v) >= 10) return v.toFixed(1);
+                return v.toFixed(2);
+            }
+
+            // Create legend element
+            const legend = document.createElement('div');
+            legend.id = 'map-legend';
+            legend.className = 'map-legend';
+
+            const title = document.createElement('div');
+            title.className = 'legend-title';
+            const displayName = (indicatorNames[variable] || variable).split('(')[0].trim();
+            title.textContent = `${displayName}`;
+            legend.appendChild(title);
+
+            // Append items so that lowest range appears at the bottom of the legend
+            for (let i = steps - 1; i >= 0; i--) {
+                const low = min + (i / steps) * range;
+                const high = min + ((i + 1) / steps) * range;
+                const midNorm = ((i + 0.5) / steps);
+                const color = getHeatmapColor(midNorm);
+
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+
+                const sw = document.createElement('div');
+                sw.className = 'legend-swatch';
+                sw.style.background = color;
+                item.appendChild(sw);
+
+                const lbl = document.createElement('div');
+                lbl.className = 'legend-label';
+                lbl.textContent = `${fmt(low)} — ${fmt(high)}`;
+                item.appendChild(lbl);
+
+                legend.appendChild(item);
+            }
+
+            // Add 'No data' swatch at the bottom to indicate regions without values
+            const noDataItem = document.createElement('div');
+            noDataItem.className = 'legend-item';
+            const noSw = document.createElement('div');
+            noSw.className = 'legend-swatch';
+            noSw.style.background = '#e6e7eb';
+            noDataItem.appendChild(noSw);
+            const noLbl = document.createElement('div');
+            noLbl.className = 'legend-label';
+            noLbl.textContent = 'No data';
+            noDataItem.appendChild(noLbl);
+            legend.appendChild(noDataItem);
+
+            // Append legend to the map container
+            container.style.position = container.style.position || 'relative';
+            container.appendChild(legend);
+        }
+
+        function toggleTemporal() {
+            const isEnabled = document.getElementById('temporal-toggle').checked;
+            const controls = document.getElementById('temporal-controls');
+
+            // Clear trails when switching modes
+            bubbleTrails = {};
+            clickedBubbleRegions = [];
+
+            if (isEnabled) {
+                controls.classList.add('active');
+                loadClusteringData();
+            } else {
+                controls.classList.remove('active');
+                pauseAnimation();
+                loadClusteringData();
+            }
+        }
+
+        // Temporal animation functions
+        function setupTimeline() {
+            if (!timeseriesData || timeseriesData.length === 0) return;
+            
+            const slider = document.getElementById('timeline-slider');
+            slider.max = timeseriesData.length - 1;
+            slider.value = 0;
+            currentTimeIndex = 0;
+            
+            updateYearDisplay();
+        }
+
+        function showOverview() {
+            // Switch back to overview mode and pause animation
+            pauseAnimation();
+            isOverviewMode = true;
+            setYearDisplayVisibility();
+            
+            // Update slider appearance for overview mode
+            const slider = document.getElementById('timeline-slider');
+            if (slider) {
+                slider.classList.add('overview-mode');
+            }
+            
+            // Highlight overview button
+            const overviewBtn = document.getElementById('overview-btn');
+            if (overviewBtn) {
+                overviewBtn.classList.add('active');
+            }
+            
+            // Reload clustering in overview mode
+            loadClusteringData();
+        }
+
+        function interpolatePoints(data1, data2, t) {
+            // Interpolate only positions, keep original clusters
+            return {
+                regions: data1.regions,
+                clusters: data1.clusters, // Keep original cluster assignments
+                k_optimal: data1.k_optimal,
+                year: data1.year + (data2.year - data1.year) * t,
+                points: data1.points.map((point, idx) => {
+                    const point2 = data2.points[idx];
+                    return [
+                        point[0] + (point2[0] - point[0]) * t,
+                        point[1] + (point2[1] - point[1]) * t
+                    ];
+                }),
+                centroids: data1.centroids
+            };
+        }
+
+        function interpolateColors(data1, data2, points, t) {
+            // Interpolate between cluster assignments (color transition)
+            // For simplicity, just switch at t > 0.5
+            return {
+                regions: data1.regions,
+                clusters: t > 0.5 ? data2.clusters : data1.clusters,
+                k_optimal: data2.k_optimal,
+                year: data2.year,
+                points: points,
+                centroids: data2.centroids
+            };
+        }
+
+        // Start playback animation
+        // ============================================
+        // PLAYBACK CONTROLS - UNIFIED PLAY/PAUSE
+        // ============================================
+
+        function togglePlayPause() {
+            if (isAnimationPlaying) {
+                pauseAnimation();
+            } else {
+                playAnimation();
+            }
+        }
+
+        function updatePlayPauseButton(isPlaying) {
+            const btn = document.getElementById('play-pause-btn');
+            const icon = document.getElementById('play-pause-icon');
+            const text = document.getElementById('play-pause-text');
+            
+            if (!btn || !icon || !text) return;
+            
+            if (isPlaying) {
+                icon.textContent = '⏸';
+                text.textContent = 'Pause';
+                btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+                btn.style.boxShadow = '0 4px 12px rgba(245, 87, 108, 0.4)';
+            } else {
+                icon.textContent = '▶';
+                text.textContent = 'Play';
+                btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                btn.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.3)';
+            }
+        }
+
+        function playAnimation() {
+            // If in overview mode, switch to temporal mode first
+            if (isOverviewMode) {
+                isOverviewMode = false;
+                setYearDisplayVisibility();
+                
+                // Update slider appearance for temporal mode
+                const slider = document.getElementById('timeline-slider');
+                if (slider) {
+                    slider.classList.remove('overview-mode');
+                }
+                
+                // Remove highlight from overview button
+                const overviewBtn = document.getElementById('overview-btn');
+                if (overviewBtn) {
+                    overviewBtn.classList.remove('active');
+                }
+                
+                // Reload data in temporal mode
+                loadClusteringData().then(() => {
+                    // Once loaded, start playing
+                    if (timeseriesData && timeseriesData.length > 0) {
+                        startPlayback();
+                    }
+                });
+                return;
+            }
+            
+            if (!timeseriesData || isAnimationPlaying) return;
+            startPlayback();
+        }
+
+        function startPlayback() {
+            // Clear trails when starting animation
+            bubbleTrails = {};
+            
+            isAnimationPlaying = true;
+            updatePlayPauseButton(true); // Update button appearance
+            const baseSpeed = parseInt(document.getElementById('speed-select').value);
+            
+            // Animation phases timing
+            const movementDuration = baseSpeed * 0.4;  // 40% for movement
+            const colorDuration = baseSpeed * 0.2;      // 20% for color change
+            const pauseDuration = baseSpeed * 0.4;      // 40% for pause
+            
+            // Dynamic frame rate based on speed
+            const frameRate = baseSpeed < 1000 ? 30 : 50; // Faster frame rate for very fast speeds
+            
+            // Calculate number of steps based on duration and frame rate
+            const movementSteps = Math.max(10, Math.floor(movementDuration / frameRate));
+            const colorSteps = Math.max(5, Math.floor(colorDuration / frameRate));
+            const pauseSteps = Math.floor(pauseDuration / frameRate);
+            
+            let currentPhase = 'movement'; // 'movement', 'color', 'pause'
+            let stepCounter = 0;
+            let finalPoints = null;
+            
+            animationInterval = setInterval(() => {
+                const nextIndex = (currentTimeIndex + 1) % timeseriesData.length;
+                
+                if (currentPhase === 'movement') {
+                    const progress = Math.min(stepCounter / movementSteps, 1);
+                    // Smooth easing function
+                    const easedProgress = progress < 0.5 
+                        ? 2 * progress * progress 
+                        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                    
+                    const interpolatedData = interpolatePoints(
+                        timeseriesData[currentTimeIndex],
+                        timeseriesData[nextIndex],
+                        easedProgress
+                    );
+                    updateClusterChart(interpolatedData);
+                    
+                    // Update table during animation (but not too frequently)
+                    if (stepCounter % 5 === 0) {
+                        updateTopKTable();
+                    }
+                    
+                    if (progress >= 1) {
+                        finalPoints = interpolatedData.points;
+                        currentPhase = 'color';
+                        stepCounter = 0;
+                    } else {
+                        stepCounter++;
+                    }
+                    
+                } else if (currentPhase === 'color') {
+                    const progress = Math.min(stepCounter / colorSteps, 1);
+                    
+                    const colorData = interpolateColors(
+                        timeseriesData[currentTimeIndex],
+                        timeseriesData[nextIndex],
+                        finalPoints,
+                        progress
+                    );
+                    updateClusterChart(colorData);
+                    
+                    if (progress >= 1) {
+                        currentPhase = 'pause';
+                        stepCounter = 0;
+                        currentTimeIndex = nextIndex;
+                        document.getElementById('timeline-slider').value = currentTimeIndex;
+                        updateYearDisplay();
+                        // Load yearly data for the new year to update table
+                        loadYearlyData(timeseriesData[currentTimeIndex].year);
+                    } else {
+                        stepCounter++;
+                    }
+                    
+                } else if (currentPhase === 'pause') {
+                    // Just wait
+                    stepCounter++;
+                    
+                    if (stepCounter >= pauseSteps) {
+                        currentPhase = 'movement';
+                        stepCounter = 0;
+                    }
+                }
+                
+            }, frameRate);
+        }
+
+        function pauseAnimation() {
+            isAnimationPlaying = false;
+            updatePlayPauseButton(false); // Update button appearance
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+            }
+        }
+
+        function resetAnimation() {
+            pauseAnimation();
+            updatePlayPauseButton(false);
+            currentTimeIndex = 0;
+            bubbleTrails = {}; // Clear trails
+            clickedBubbleRegions = []; // Clear clicked regions
+            if (timeseriesData && timeseriesData.length > 0) {
+                updateClusterChart(timeseriesData[0]);
+                document.getElementById('timeline-slider').value = 0;
+                updateYearDisplay();
+            }
+        }
+
+        function onTimelineChange() {
+            if (!timeseriesData) return;
+            
+            pauseAnimation();
+            currentTimeIndex = parseInt(document.getElementById('timeline-slider').value);
+            updateClusterChart(timeseriesData[currentTimeIndex]);
+            loadYearlyData(timeseriesData[currentTimeIndex].year);
+            updateYearDisplay();
+        }
+
+        function updateYearDisplay() {
+            if (!timeseriesData || currentTimeIndex >= timeseriesData.length) return;
+            document.getElementById('year-display').textContent = timeseriesData[currentTimeIndex].year;
+        }
+
+        /**
+         * Show or hide the small year display based on overview mode.
+         */
+        function setYearDisplayVisibility() {
+            const el = document.getElementById('year-display');
+            if (!el) return;
+            if (isOverviewMode) {
+                el.style.display = 'none';
+            } else {
+                el.style.display = '';
+            }
+        }
+
+        function showLoading(show) {
+            const overlay = document.getElementById('cluster-loading');
+            if (show) {
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+        }
+
+        // Brush selection for cluster chart
+        const clusterCanvas = document.getElementById('clusterChart');
+        
+        clusterCanvas.addEventListener('mousedown', (e) => {
+            if (isAnimationPlaying) return; // Disable during animation
+            
+            const rect = clusterCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const chartArea = clusterChart.chartArea;
+            if (x >= chartArea.left && x <= chartArea.right && 
+                y >= chartArea.top && y <= chartArea.bottom) {
+                isDrawing = true;
+                brushStart = { x, y };
+                brushEnd = { x, y };
+                hasMoved = false;
+            }
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            
+            const rect = clusterCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            brushEnd = { x, y };
+            
+            // Check if moved beyond threshold (5 pixels)
+            const dx = Math.abs(x - brushStart.x);
+            const dy = Math.abs(y - brushStart.y);
+            if (dx > 5 || dy > 5) {
+                hasMoved = true;
+            }
+            
+            clusterChart.update();
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                
+                if (hasMoved) {
+                    // Drag selection - select all points in rectangle
+                    updateBrushSelection();
+                } else {
+                    // Single click - select nearest point
+                    selectSinglePoint();
+                }
+            }
+        });
+        
+        clusterCanvas.addEventListener('dblclick', () => {
+            brushStart = null;
+            brushEnd = null;
+            selectedRegionNames = [];
+            updateSelectionHighlight();
+            updateLinkedViews();
+        });
+
+        function selectSinglePoint() {
+            if (!brushStart || !currentClustering) return;
+            
+            const xScale = clusterChart.scales.x;
+            const yScale = clusterChart.scales.y;
+            
+            const clickX = xScale.getValueForPixel(brushStart.x);
+            const clickY = yScale.getValueForPixel(brushStart.y);
+            
+            // Find nearest point
+            let minDistance = Infinity;
+            let nearestIndex = -1;
+            
+            for (let i = 0; i < currentClustering.points.length; i++) {
+                const [px, py] = currentClustering.points[i];
+                const distance = Math.sqrt(Math.pow(px - clickX, 2) + Math.pow(py - clickY, 2));
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestIndex = i;
+                }
+            }
+            
+            // Select the nearest point if within reasonable distance
+            // (in data units, adjust threshold as needed)
+            if (nearestIndex >= 0 && minDistance < 0.5) {
+                const regionName = currentClustering.regions[nearestIndex];
+                
+                // Toggle point in/out of selection
+                const index = selectedRegionNames.indexOf(regionName);
+                if (index >= 0) {
+                    // Already selected, remove it
+                    selectedRegionNames.splice(index, 1);
+                    console.log('Deselected region (click):', regionName);
+                } else {
+                    // Not selected, add it
+                    selectedRegionNames.push(regionName);
+                    console.log('Selected region (click):', regionName);
+                }
+            } else {
+                // Click was too far from any point - do nothing
+                console.log('No point near click');
+            }
+            
+            // Clear brush rectangle
+            brushStart = null;
+            brushEnd = null;
+            
+            // Update visual highlighting (this calls updateLinkedViews internally)
+            updateSelectionHighlight();
+        }
+
+        function updateBrushSelection() {
+            if (!brushStart || !brushEnd || !currentClustering) return;
+            
+            const xScale = clusterChart.scales.x;
+            const yScale = clusterChart.scales.y;
+            
+            const x1 = Math.min(brushStart.x, brushEnd.x);
+            const x2 = Math.max(brushStart.x, brushEnd.x);
+            const y1 = Math.min(brushStart.y, brushEnd.y);
+            const y2 = Math.max(brushStart.y, brushEnd.y);
+            
+            const dataX1 = xScale.getValueForPixel(x1);
+            const dataX2 = xScale.getValueForPixel(x2);
+            const dataY1 = yScale.getValueForPixel(y2);
+            const dataY2 = yScale.getValueForPixel(y1);
+            
+            const brushedRegions = [];
+            for (let i = 0; i < currentClustering.points.length; i++) {
+                const [px, py] = currentClustering.points[i];
+                if (px >= dataX1 && px <= dataX2 && py >= dataY1 && py <= dataY2) {
+                    brushedRegions.push(currentClustering.regions[i]);
+                }
+            }
+            
+            // Toggle brushed regions in/out of selection
+            brushedRegions.forEach(region => {
+                const index = selectedRegionNames.indexOf(region);
+                if (index >= 0) {
+                    // Already selected, remove it
+                    selectedRegionNames.splice(index, 1);
+                } else {
+                    // Not selected, add it
+                    selectedRegionNames.push(region);
+                }
+            });
+            
+            console.log('Toggled regions (brush):', brushedRegions);
+            console.log('Current selection:', selectedRegionNames);
+            
+            // Clear brush rectangle
+            brushStart = null;
+            brushEnd = null;
+            
+            // Update visual highlighting
+            updateSelectionHighlight();
+        }
+
+        function updateTopKValue() {
+            const slider = document.getElementById('k-slider');
+            const display = document.getElementById('k-value-display');
+            
+            if (!slider || !display) {
+                console.error('K slider or display not found!');
+                return;
+            }
+            
+            topKValue = parseInt(slider.value);
+            display.textContent = topKValue;
+            // Do not modify the slider background when moving it — keep CSS default
+            
+            console.log('K slider updated to:', topKValue);
+            
+            // Update all linked views to reflect new K value
+            updateLinkedViews();
+        }
+
+        // ============================================
+        // MANUAL MODE - NEW BUTTON-BASED INTERFACE
+        // ============================================
+        
+        function toggleManualModeButton() {
+            isManualTopKMode = !isManualTopKMode;
+            
+            const btn = document.getElementById('manual-mode-btn');
+            const icon = document.getElementById('manual-mode-icon');
+            const text = document.getElementById('manual-mode-text');
+            const sliderContainer = document.getElementById('k-slider-container');
+            const manualList = document.getElementById('manual-variables-list');
+            const manualInfo = document.getElementById('manual-selection-info');
+            const selectedCount = document.getElementById('selected-vars-count');
+            
+            if (!btn || !sliderContainer || !manualList) {
+                console.error('❌ Manual mode elements not found!');
+                return;
+            }
+            
+            console.log('🔄 Manual mode:', isManualTopKMode);
+            
+            if (isManualTopKMode) {
+                // Switch to manual mode
+                btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+                btn.style.boxShadow = '0 4px 12px rgba(245, 87, 108, 0.4)';
+                icon.textContent = '✓';
+                text.textContent = 'Manual';
+                
+                sliderContainer.style.display = 'none';
+                if (manualInfo) {
+                    manualInfo.style.display = 'block';
+                    if (selectedCount) {
+                        selectedCount.textContent = manualSelectedVariables.length;
+                    }
+                }
+                manualList.style.display = 'block';
+                // Attach click-outside handler to close the manual list when clicking outside
+                if (!manualListClickHandler) {
+                    manualListClickHandler = function(e) {
+                        try {
+                            const manualBtn = document.getElementById('manual-mode-btn');
+                            const clickedInsideList = e.target && e.target.closest && e.target.closest('#manual-variables-list');
+                            const clickedManualBtn = e.target && e.target.closest && e.target.closest('#manual-mode-btn');
+                            if (!clickedInsideList && !clickedManualBtn) {
+                                closeManualSelection();
+                            }
+                        } catch (err) { /* ignore */ }
+                    };
+                    document.addEventListener('click', manualListClickHandler);
+                }
+                
+                // Get all variables from current data
+                if (currentYearlyData && currentYearlyData.length > 0) {
+                    const allVariables = [...new Set(currentYearlyData.map(row => row.data_type))].sort();
+                    populateManualVariableSelect(allVariables);
+                } else {
+                    console.warn('⚠️ No data available for manual selection');
+                }
+            } else {
+                // Switch to auto mode
+                btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                btn.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.3)';
+                icon.textContent = '📝';
+                text.textContent = 'Manual';
+                
+                sliderContainer.style.display = 'flex';
+                if (manualInfo) {
+                    manualInfo.style.display = 'none';
+                }
+                manualList.style.display = 'none';
+                // Remove click-outside handler if attached
+                if (manualListClickHandler) {
+                    try { document.removeEventListener('click', manualListClickHandler); } catch (e) {}
+                    manualListClickHandler = null;
+                }
+            }
+            
+            updateLinkedViews();
+        }
+
+        function updateManualSelectionCount() {
+            const selectedCount = document.getElementById('selected-vars-count');
+            if (selectedCount) {
+                selectedCount.textContent = manualSelectedVariables.length;
+            }
+        }
+
+        function toggleManualMode() {
+            const checkbox = document.getElementById('manual-mode-toggle');
+            const sliderContainer = document.getElementById('k-slider-container');
+            const manualList = document.getElementById('manual-variables-list');
+            
+            if (!checkbox || !sliderContainer || !manualList) {
+                console.error('❌ Manual mode elements not found!');
+                return;
+            }
+            
+            isManualTopKMode = checkbox.checked;
+            console.log('🔄 Manual mode:', isManualTopKMode);
+            
+            if (isManualTopKMode) {
+                // Switch to manual mode
+                sliderContainer.style.display = 'none';
+                manualList.classList.add('active');
+            } else {
+                // Switch to auto mode
+                sliderContainer.style.display = 'flex';
+                manualList.classList.remove('active');
+                manualSelectedVariables = [];
+            }
+            
+            // Rebuild table and PCP with new mode
+            updateLinkedViews();
+        }
+
+        function closeManualSelection() {
+            const manualList = document.getElementById('manual-variables-list');
+            if (manualList) {
+                manualList.style.display = 'none';
+                manualList.classList.remove('active');
+                // Remove global click-outside handler if attached
+                if (manualListClickHandler) {
+                    try { document.removeEventListener('click', manualListClickHandler); } catch (e) {}
+                    manualListClickHandler = null;
+                }
+            }
+            console.log('✅ Manual selection menu closed');
+        }
+        
+        function populateManualVariableSelect(allVariables) {
+            if (!isManualTopKMode) return; // Only populate if in manual mode
+            
+            const listContainer = document.getElementById('manual-variables-list');
+            if (!listContainer || !allVariables || allVariables.length === 0) {
+                console.error('❌ Cannot populate manual list - missing container or variables');
+                return;
+            }
+            
+            console.log('📋 Populating manual list with', allVariables.length, 'variables');
+            
+            // Clear and repopulate with checkboxes
+            listContainer.innerHTML = '';
+            
+            // Add styled header with gradient
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 8px 10px; background: #ffffff; border-radius: 6px 6px 0 0; border-bottom: 1px solid rgba(0,0,0,0.06); position: sticky; top: 0; z-index: 50;';
+            
+            const title = document.createElement('span');
+            title.textContent = '📋 Select Variables:';
+            title.style.cssText = 'font-weight: 700; font-size: 0.8rem; color: #2c3e50; letter-spacing: 0.3px;';
+            
+            const resetButton = document.createElement('button');
+            resetButton.textContent = 'Reset';
+            resetButton.className = 'btn-mini';
+            resetButton.style.cssText = 'background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); padding: 6px 14px; box-shadow: 0 2px 6px rgba(192, 57, 43, 0.3);';
+            // Reset manual selections (do not close the panel)
+            resetButton.onclick = function(e) {
+                e.stopPropagation();
+                manualSelectedVariables = [];
+                // Uncheck all checkboxes in the list
+                const boxes = listContainer.querySelectorAll('input[type="checkbox"]');
+                boxes.forEach(cb => { cb.checked = false; });
+                updateManualSelectionCount();
+                updateLinkedViews();
+                console.log('🔁 Manual selections reset');
+            };
+
+            header.appendChild(title);
+            header.appendChild(resetButton);
+            listContainer.appendChild(header);
+            
+            const sortedVars = [...allVariables].sort();
+            sortedVars.forEach(variable => {
+                const item = document.createElement('div');
+                item.className = 'variable-checkbox-item';
+                item.style.cssText = 'padding: 8px 10px; margin: 4px 0; background: white; border-radius: 6px; transition: all 0.2s; cursor: pointer; border: 1px solid #e0e7ff;';
+                item.onmouseenter = function() { this.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%)'; this.style.borderColor = '#667eea'; };
+                item.onmouseleave = function() { this.style.background = 'white'; this.style.borderColor = '#e0e7ff'; };
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `var-${variable}`;
+                checkbox.value = variable;
+                checkbox.checked = manualSelectedVariables.includes(variable);
+                checkbox.style.cssText = 'margin-right: 10px; width: 16px; height: 16px; cursor: pointer; accent-color: #667eea;';
+                
+                const label = document.createElement('label');
+                label.htmlFor = `var-${variable}`;
+                label.textContent = indicatorNames[variable] || variable;
+                label.style.cssText = 'cursor: pointer; font-size: 0.75rem; color: #2c3e50; flex: 1;';
+                
+                // Make entire row clickable
+                item.onclick = function(e) {
+                    e.stopPropagation(); // prevent document click-outside handler from firing
+                    if (e.target !== checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change'));
+                    }
+                };
+                // Prevent checkbox clicks from bubbling to document (avoid accidental close)
+                checkbox.addEventListener('click', function(e) { e.stopPropagation(); });
+                
+                // Add event listener to checkbox
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        if (!manualSelectedVariables.includes(variable)) {
+                            manualSelectedVariables.push(variable);
+                        }
+                    } else {
+                        const idx = manualSelectedVariables.indexOf(variable);
+                        if (idx > -1) {
+                            manualSelectedVariables.splice(idx, 1);
+                        }
+                    }
+                    console.log('✅ Manual selection updated:', manualSelectedVariables.length, 'variables');
+                    updateManualSelectionCount(); // Update counter
+                    updateLinkedViews();
+                });
+                
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                listContainer.appendChild(item);
+            });
+            
+            console.log('📋 Populated manual list with', sortedVars.length, 'variables');
+        }
+
+        function updateManualSelection() {
+            // This function is now handled by individual checkbox listeners
+            // Kept for compatibility
+        }
+
+        function updateLinkedViews() {
+            console.log('=== updateLinkedViews called ===');
+            console.log('currentYearlyData:', currentYearlyData ? currentYearlyData.length : 'null');
+            console.log('currentClustering:', currentClustering ? 'exists' : 'null');
+            console.log('selectedRegionNames:', selectedRegionNames);
+            
+            if (!currentYearlyData || !currentClustering) {
+                console.log('Skipping update: missing data');
+                return;
+            }
+            
+            console.log('Updating TopK table...');
+            updateTopKTable();
+            
+            console.log('Updating bubble chart...');
+            updateBubbleChart();
+            
+            console.log('All views updated!');
+        }
+
+        // ============================================
+        // TOP K TABLE UPDATE
+        // ============================================
+        
+        // PCP functionality removed - graphics component eliminated from dashboard
+
+        // Note: onBubbleVariableChange() and updateBubbleChart() are already defined above
+
+        function updateTopKTable() {
+            console.log('=== updateTopKTable called ===');
+            console.log('selectedRegionNames:', selectedRegionNames);
+            console.log('currentYearlyData exists:', !!currentYearlyData);
+            console.log('currentClustering exists:', !!currentClustering);
+            
+            const tableHead = document.getElementById('tableHead');
+            const tableBody = document.getElementById('tableBody');
+            
+            if (!currentYearlyData || !currentClustering) {
+                tableHead.innerHTML = '<tr><th>Select regions to view analysis</th></tr>';
+                tableBody.innerHTML = '';
+                return;
+            }
+            
+            // Get all unique clusters
+            const uniqueClusters = [...new Set(currentClustering.clusters)].sort((a, b) => a - b);
+            
+            // Get all unique data_types (variables)
+            const allVariables = [...new Set(currentYearlyData.map(row => row.data_type))];
+            
+            // Populate manual select dropdown if needed
+            populateManualVariableSelect(allVariables);
+            
+            // Update slider max value based on number of variables
+            const slider = document.getElementById('k-slider');
+            if (slider) {
+                slider.max = allVariables.length;
+                // Adjust current value if it exceeds max
+                if (topKValue > allVariables.length) {
+                    topKValue = allVariables.length;
+                    slider.value = topKValue;
+                    document.getElementById('k-value-display').textContent = topKValue;
+                    // Update gradient
+                    const percentage = ((topKValue - parseInt(slider.min)) / (parseInt(slider.max) - parseInt(slider.min))) * 100;
+                    slider.style.background = `linear-gradient(to right, #3498db 0%, #3498db ${percentage}%, #ddd ${percentage}%, #ddd 100%)`;
+                }
+            }
+            
+            // Prepare data structure: variable -> region -> value
+            const variableData = {};
+            allVariables.forEach(variable => {
+                variableData[variable] = {};
+                currentClustering.regions.forEach(region => {
+                    variableData[variable][region] = null;
+                });
+            });
+            
+            // Fill data from currentYearlyData
+            currentYearlyData.forEach(row => {
+                if (variableData[row.data_type] && variableData[row.data_type][row.region] !== undefined) {
+                    variableData[row.data_type][row.region] = row.value;
+                }
+            });
+            
+            // Calculate gap normalized for each variable
+            const variableGaps = [];
+            
+            allVariables.forEach(variable => {
+                const selectedValues = [];
+                const nonSelectedValues = [];
+                
+                currentClustering.regions.forEach(region => {
+                    const value = variableData[variable][region];
+                    if (value !== null && value !== undefined) {
+                        if (selectedRegionNames.includes(region)) {
+                            selectedValues.push(value);
+                        } else {
+                            nonSelectedValues.push(value);
+                        }
+                    }
+                });
+                
+                // If regions are selected, calculate gap between selected and non-selected
+                if (selectedValues.length > 0 && nonSelectedValues.length > 0) {
+                    // Calculate means
+                    const meanSelected = selectedValues.reduce((a, b) => a + b, 0) / selectedValues.length;
+                    const meanNonSelected = nonSelectedValues.reduce((a, b) => a + b, 0) / nonSelectedValues.length;
+                    
+                    // Calculate standard deviation of all values
+                    const allValues = [...selectedValues, ...nonSelectedValues];
+                    const meanAll = allValues.reduce((a, b) => a + b, 0) / allValues.length;
+                    const variance = allValues.reduce((sum, val) => sum + Math.pow(val - meanAll, 2), 0) / allValues.length;
+                    const stdDev = Math.sqrt(variance);
+                    
+                    // Normalized gap
+                    const gap = stdDev > 0 ? Math.abs(meanSelected - meanNonSelected) / stdDev : 0;
+                    
+                    variableGaps.push({
+                        variable: variable,
+                        gap: gap,
+                        data: variableData[variable]
+                    });
+                } else if (selectedValues.length === 0 && nonSelectedValues.length > 0) {
+                    // No selection yet - use coefficient of variation as diversity metric
+                    const mean = nonSelectedValues.reduce((a, b) => a + b, 0) / nonSelectedValues.length;
+                    const variance = nonSelectedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / nonSelectedValues.length;
+                    const stdDev = Math.sqrt(variance);
+                    const coefficientOfVariation = mean !== 0 ? stdDev / Math.abs(mean) : stdDev;
+                    
+                    variableGaps.push({
+                        variable: variable,
+                        gap: coefficientOfVariation,
+                        data: variableData[variable]
+                    });
+                }
+            });
+            
+            // Sort by gap descending and take top K
+            variableGaps.sort((a, b) => b.gap - a.gap);
+            
+            let topKVariables;
+            if (isManualTopKMode && manualSelectedVariables.length > 0) {
+                // Use manually selected variables
+                topKVariables = variableGaps.filter(v => manualSelectedVariables.includes(v.variable));
+            } else {
+                // Use automatic top K selection
+                topKVariables = variableGaps.slice(0, topKValue);
+            }
+            
+            if (topKVariables.length === 0) {
+                tableHead.innerHTML = '<tr><th>No data available</th></tr>';
+                tableBody.innerHTML = '';
+                return;
+            }
+            
+            // TRANSPOSED TABLE: Variables in columns, Clusters+Regions in rows
+            // Build table header: Cluster/Region | Variable1 | Variable2 | ... | VariableK
+            let headerHTML = '<tr><th class="col-selected-regions">Cluster / Region</th>';
+            
+            topKVariables.forEach(varObj => {
+                const displayName = indicatorNames[varObj.variable] || varObj.variable;
+                headerHTML += `<th>${displayName}</th>`;
+            });
+            
+            headerHTML += '</tr>';
+            tableHead.innerHTML = headerHTML;
+            
+            // Pre-calculate all values for each variable to determine min/max for color normalization
+            const variableStats = {};
+            topKVariables.forEach(varObj => {
+                const variable = varObj.variable;
+                const data = varObj.data;
+                const allValues = [];
+                
+                // Collect all values for this variable (selected regions + cluster medians)
+                selectedRegionNames.forEach(region => {
+                    const val = data[region];
+                    if (val !== null && val !== undefined) allValues.push(val);
+                });
+                
+                // Also collect cluster median values
+                uniqueClusters.forEach(clusterId => {
+                    const clusterRegionsNonSelected = currentClustering.regions.filter((region, idx) => 
+                        currentClustering.clusters[idx] === clusterId && !selectedRegionNames.includes(region)
+                    );
+                    
+                    let clusterValues = clusterRegionsNonSelected
+                        .map(region => data[region])
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (clusterValues.length === 0) {
+                        const allClusterRegions = currentClustering.regions.filter((region, idx) => 
+                            currentClustering.clusters[idx] === clusterId
+                        );
+                        clusterValues = allClusterRegions
+                            .map(region => data[region])
+                            .filter(v => v !== null && v !== undefined);
+                    }
+                    
+                    if (clusterValues.length > 0) {
+                        clusterValues.sort((a, b) => a - b);
+                        const mid = Math.floor(clusterValues.length / 2);
+                        const median = clusterValues.length % 2 === 0
+                            ? (clusterValues[mid - 1] + clusterValues[mid]) / 2
+                            : clusterValues[mid];
+                        allValues.push(median);
+                    }
+                });
+                
+                variableStats[variable] = {
+                    min: Math.min(...allValues),
+                    max: Math.max(...allValues),
+                    range: Math.max(...allValues) - Math.min(...allValues)
+                };
+            });
+            
+            // Build table body: one row per selected region first, then one row per cluster median
+            let bodyHTML = '';
+            
+            // First, add selected region rows
+            selectedRegionNames.forEach(region => {
+                bodyHTML += '<tr>';
+                bodyHTML += `<td class="col-selected-regions" style="text-align: left; font-weight: bold;">${region}</td>`;
+                
+                topKVariables.forEach(varObj => {
+                    const variable = varObj.variable;
+                    const data = varObj.data;
+                    const stats = variableStats[variable];
+                    const value = data[region];
+                    
+                    if (value !== null && value !== undefined) {
+                        // Normalize using variable's column statistics
+                        const normalized = stats.range > 0 ? (value - stats.min) / stats.range : 0.5;
+                        const color = getHeatmapColor(normalized);
+                        bodyHTML += `<td style="background-color: ${color};"><span class="topk-value-box">${value.toFixed(2)}</span></td>`;
+                    } else {
+                        bodyHTML += `<td style="background-color: #f0f0f0;"><span class=\"topk-value-box\">-</span></td>`;
+                    }
+                });
+                
+                bodyHTML += '</tr>';
+            });
+            
+            // Then, add cluster median rows
+            uniqueClusters.forEach(clusterId => {
+                bodyHTML += '<tr>';
+                bodyHTML += `<td class="col-selected-regions" style="text-align: left;">Cluster ${clusterId + 1}</td>`;
+                
+                topKVariables.forEach(varObj => {
+                    const variable = varObj.variable;
+                    const data = varObj.data;
+                    const stats = variableStats[variable];
+                    
+                    // Calculate cluster median
+                    const clusterRegionsNonSelected = currentClustering.regions.filter((region, idx) => 
+                        currentClustering.clusters[idx] === clusterId && !selectedRegionNames.includes(region)
+                    );
+                    
+                    let clusterValues = clusterRegionsNonSelected
+                        .map(region => data[region])
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (clusterValues.length === 0) {
+                        const allClusterRegions = currentClustering.regions.filter((region, idx) => 
+                            currentClustering.clusters[idx] === clusterId
+                        );
+                        clusterValues = allClusterRegions
+                            .map(region => data[region])
+                            .filter(v => v !== null && v !== undefined);
+                    }
+                    
+                    if (clusterValues.length > 0) {
+                        clusterValues.sort((a, b) => a - b);
+                        const mid = Math.floor(clusterValues.length / 2);
+                        const median = clusterValues.length % 2 === 0
+                            ? (clusterValues[mid - 1] + clusterValues[mid]) / 2
+                            : clusterValues[mid];
+
+                        // Normalize using variable's column statistics
+                        const normalized = stats.range > 0 ? (median - stats.min) / stats.range : 0.5;
+                        const color = getHeatmapColor(normalized);
+                        bodyHTML += `<td style="background-color: ${color};"><span class="topk-value-box">${median.toFixed(2)}</span></td>`;
+                    } else {
+                        bodyHTML += `<td style="background-color: #f0f0f0;"><span class=\"topk-value-box\">-</span></td>`;
+                    }
+                });
+                
+                bodyHTML += '</tr>';
+            });
+            
+            tableBody.innerHTML = bodyHTML;
+        }
+        
+        function getHeatmapColor(normalized) {
+            // Color scale with 9 distinct orange colors from light to dark
+            const colors = [
+                '#fff5eb',
+                '#fee6ce',
+                '#fdd0a2',
+                '#fdae6b',
+                '#fd8d3c',
+                '#f16913',
+                '#d94801',
+                '#a63603',
+                '#7f2704'
+            ];
+            
+            // Map normalized (0-1) to one of the 9 colors
+            const index = Math.min(Math.floor(normalized * colors.length), colors.length - 1);
+            return colors[index];
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            map.invalidateSize();
+        });
+        
+        // Load Italy regions GeoJSON
+        async function loadRegionsGeoJSON() {
+            try {
+                // Using public GeoJSON for Italian regions
+                const response = await fetch('https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_IT_regions.geojson');
+                regionGeoJson = await response.json();
+                console.log('GeoJSON loaded:', regionGeoJson.features.length, 'regions');
+                
+                // Initialize GeoJSON layer WITHOUT default style to avoid gray borders
+                // Styles will be applied by updateMapStyles() after clustering data loads
+                geoJsonLayer = L.geoJSON(regionGeoJson, {
+                    onEachFeature: onEachFeature,
+                    renderer: L.canvas(),
+                    style: function() {
+                        // Temporary invisible style until clustering data loads
+                        return {
+                            fillColor: 'transparent',
+                            fillOpacity: 0,
+                            weight: 0,
+                            opacity: 0
+                        };
+                    }
+                }).addTo(map);
+                
+            } catch (error) {
+                console.error('Error loading GeoJSON:', error);
+                alert('Failed to load map regions. Using fallback markers.');
+            }
+        }
+        
+        function defaultStyle(feature) {
+            return {
+                fillColor: 'transparent',
+                weight: 2,
+                opacity: 1,
+                color: '#999',
+                fillOpacity: 0.7
+            };
+        }
+        
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight,
+                click: selectRegionFromMap
+            });
+        }
+        
+        function highlightFeature(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            if (!selectedRegionNames.includes(regionName)) {
+                layer.setStyle({
+                    weight: 4,
+                    opacity: 1
+                });
+            }
+            
+            // Show tooltip
+            const props = layer.feature.properties;
+            const name = getRegionNameFromFeature(layer.feature);
+            let tooltipContent = `<b>${name}</b>`;
+            
+            if (currentClustering) {
+                const regionIdx = currentClustering.regions.indexOf(name);
+                if (regionIdx >= 0) {
+                    const clusterId = currentClustering.clusters[regionIdx];
+                    tooltipContent += `<br>Cluster: ${clusterId + 1}`;
+                }
+            }
+            
+            if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                const value = getRegionVariableValue(name, selectedVariable);
+                if (value !== null) {
+                    const displayName = indicatorNames[selectedVariable] || selectedVariable;
+                    tooltipContent += `<br>${displayName}: ${value.toFixed(2)}`;
+                }
+            }
+            
+            layer.bindTooltip(tooltipContent).openTooltip();
+        }
+        
+        function resetHighlight(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            // Don't use resetStyle - it causes gray color
+            // Instead, reapply correct styles
+            if (!selectedRegionNames.includes(regionName)) {
+                // Find the region in clustering data and reapply its style
+                if (currentClustering) {
+                    const regionIdx = currentClustering.regions.indexOf(regionName);
+                    if (regionIdx >= 0) {
+                        const clusterId = currentClustering.clusters[regionIdx];
+                        const clusterColor = clusterColors[clusterId % clusterColors.length];
+                        
+                        // Default: use cluster color as fill
+                        let fillColor = clusterColor;
+                        let fillOpacity = 0.5;
+                        
+                        // If a variable is selected, override with variable color
+                        if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                            const value = getRegionVariableValue(regionName, selectedVariable);
+                            if (value !== null && globalScales[selectedVariable]) {
+                                const scale = globalScales[selectedVariable];
+                                const range = scale.max - scale.min;
+                                const normalized = range > 0 ? (value - scale.min) / range : 0.5;
+                                fillColor = getHeatmapColor(normalized);
+                                fillOpacity = 0.7;
+                            }
+                        }
+                        
+                        layer.setStyle({
+                            fillColor: fillColor,
+                            fillOpacity: fillOpacity,
+                            weight: 3,
+                            opacity: 1,
+                            color: clusterColor
+                        });
+                    }
+                }
+            }
+            
+            layer.closeTooltip();
+        }
+        
+        function selectRegionFromMap(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            // Toggle selection
+            const index = selectedRegionNames.indexOf(regionName);
+            if (index >= 0) {
+                selectedRegionNames.splice(index, 1);
+            } else {
+                selectedRegionNames.push(regionName);
+            }
+            
+            console.log('Selected from map:', regionName);
+            
+            // Update both visualizations
+            updateMapStyles();
+            updateSelectionHighlight();
+        }
+        
+        function getRegionNameFromFeature(feature) {
+            // GeoJSON properties may vary, try common field names
+            const props = feature.properties;
+            return props.reg_name || props.name || props.NOME_REG || props.NAME_1 || '';
+        }
+        
+        function getRegionVariableValue(regionName, variable) {
+            if (!currentYearlyData) return null;
+            
+            const row = currentYearlyData.find(r => r.region === regionName && r.data_type === variable);
+            return row ? row.value : null;
+        }
+        
+        // Calculate global scales for all variables (0 to max across all years)
+        // This is used only in non-temporal mode, in temporal mode we preload all years
+        async function calculateGlobalScales() {
+            try {
+                console.log('Computing global scales from current data (non-temporal mode)...');
+                
+                if (!currentYearlyData) return;
+                
+                const variables = [...new Set(currentYearlyData.map(row => row.data_type))];
+                
+                // For each variable, set min to 0 and use current max
+                variables.forEach(variable => {
+                    const values = currentYearlyData
+                        .filter(row => row.data_type === variable)
+                        .map(row => row.value)
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (values.length > 0) {
+                        const currentMin = Math.min(...values);
+                        const currentMax = Math.max(...values);
+                        let pad = (currentMax - currentMin) * 0.05; // 5% padding
+                        if (pad === 0) pad = Math.abs(currentMax) * 0.05 || 1;
+
+                        globalScales[variable] = {
+                            min: currentMin - pad,
+                            max: currentMax + pad
+                        };
+                    }
+                });
+                
+                globalScalesCalculated = true;
+                console.log('Global scales computed for', Object.keys(globalScales).length, 'variables (min=0, max=current)');
+            } catch (error) {
+                console.error('Error computing global scales:', error);
+            }
+        }
+        
+        function updateMapVariable() {
+            selectedVariable = document.getElementById('map-variable-select').value;
+            console.log('Map variable changed to:', selectedVariable);
+            updateMapStyles();
+        }
+        
+        function populateVariableDropdown() {
+            if (!currentYearlyData) return;
+            
+            const select = document.getElementById('map-variable-select');
+            const variables = [...new Set(currentYearlyData.map(row => row.data_type))].sort();
+            
+            // Keep "None" option and add all variables
+            const currentValue = select.value;
+            select.innerHTML = '<option value="none">None</option>';
+            
+            variables.forEach(variable => {
+                const displayName = indicatorNames[variable] || variable;
+                const option = document.createElement('option');
+                option.value = variable;
+                option.textContent = displayName;
+                select.appendChild(option);
+            });
+            
+            // Restore previous selection if still valid
+            if (currentValue && currentValue !== 'none' && variables.includes(currentValue)) {
+                select.value = currentValue;
+            }
+            
+            // Also populate bubble chart dropdowns
+            populateBubbleDropdowns(variables);
+        }
+        
+        function populateBubbleDropdowns(variables) {
+            console.log('populateBubbleDropdowns called with', variables.length, 'variables');
+            const xSelect = document.getElementById('bubble-x-select');
+            const ySelect = document.getElementById('bubble-y-select');
+            const sizeSelect = document.getElementById('bubble-size-select');
+            
+            console.log('Dropdown elements:', { xSelect: !!xSelect, ySelect: !!ySelect, sizeSelect: !!sizeSelect });
+            
+            if (!xSelect || !ySelect || !sizeSelect) {
+                console.error('Dropdown elements not found!');
+                return;
+            }
+            
+            // Store current values
+            const currentX = xSelect.value || bubbleXVar;
+            const currentY = ySelect.value || bubbleYVar;
+            const currentSize = sizeSelect.value || bubbleSizeVar;
+            
+            // Populate all three dropdowns
+            [xSelect, ySelect, sizeSelect].forEach(select => {
+                select.innerHTML = '';
+                variables.forEach(variable => {
+                    const displayName = indicatorNames[variable] || variable;
+                    const option = document.createElement('option');
+                    option.value = variable;
+                    option.textContent = displayName;
+                    select.appendChild(option);
+                });
+            });
+            
+            // Set default or restore previous values
+            xSelect.value = variables.includes(currentX) ? currentX : (variables.includes('BIRTHRATE') ? 'BIRTHRATE' : variables[0]);
+            ySelect.value = variables.includes(currentY) ? currentY : (variables.includes('LIFEEXP0T') ? 'LIFEEXP0T' : variables[0]);
+            sizeSelect.value = variables.includes(currentSize) ? currentSize : (variables.includes('DEATHRATE') ? 'DEATHRATE' : variables[0]);
+            
+            // Update state variables
+            bubbleXVar = xSelect.value;
+            bubbleYVar = ySelect.value;
+            bubbleSizeVar = sizeSelect.value;
+        }
+        
+        // Initial load - IMPORTANT: Load GeoJSON FIRST, then clustering data
+        // This ensures the map regions exist before we try to color them
+        async function initializeDashboard() {
+            console.log('Initializing dashboard...');
+            await loadRegionsGeoJSON();
+            console.log('GeoJSON loaded, now loading clustering data...');
+            await loadClusteringData();
+            // Ensure year display visibility is correct on initial load (overview by default)
+            setYearDisplayVisibility();
+            console.log('Dashboard initialized!');
+            
+            // Setup manual mode event listeners
+            setupManualModeListeners();
+        }
+        
+        function setupManualModeListeners() {
+            // Checkbox toggle
+            const checkbox = document.getElementById('manual-mode-toggle');
+            if (checkbox) {
+                checkbox.addEventListener('change', toggleManualMode);
+                console.log('✅ Manual checkbox listener attached');
+            }
+        }
+        
+        initializeDashboard();
+    </script>
+</body>
+</html>
