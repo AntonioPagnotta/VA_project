@@ -1,0 +1,3367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Italian Demographics - Complete Analytics Suite</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+    <style>
+        :root {
+            --primary-bg: #f4f6f8;
+            --card-bg: #ffffff;
+            --header-bg: #2c3e50;
+            --text-main: #333;
+            --accent: #3498db;
+            --border-radius: 8px;
+            --pcp-line: rgba(52, 152, 219, 0.3);
+            --pcp-selected: #e74c3c;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0; background-color: var(--primary-bg);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        header {
+            background-color: var(--header-bg);
+            color: white; padding: 0 15px; height: 40px;
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 42% 58%;
+            gap: 8px; padding: 8px;
+            height: calc(100vh - 40px);
+            box-sizing: border-box;
+        }
+
+        .col { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 10px; display: flex; flex-direction: column;
+            min-height: 0;
+        }
+
+        .card-header {
+            font-size: 0.7rem; font-weight: 700; color: var(--header-bg);
+            border-bottom: 1px solid #eee; margin-bottom: 5px; padding-bottom: 3px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Layout Ratios */
+        .map-wrapper { flex: 1.5; }
+        .cluster-wrapper { flex: 1; }
+        .pcp-wrapper { flex: 1; }
+        .bubble-wrapper { flex: 1; }
+        .stats-wrapper { flex: 1.2; overflow: hidden; }
+
+        .chart-container { 
+            flex-grow: 1; 
+            position: relative; 
+            width: 100%; 
+            height: 100%;
+            padding: 10px 20px 50px 20px;  /* Extra padding per evitare clipping */
+        }
+        .pcp-wrapper .chart-container { overflow-y: auto; overflow-x: hidden; }
+        
+        /* Controls */
+        .cluster-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 0.65rem;
+        }
+
+        .mini-select {
+            padding: 2px 4px;
+            font-size: 0.65rem;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            background: white;
+        }
+
+        .btn-mini {
+            padding: 2px 6px;
+            font-size: 0.7rem;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-mini:hover {
+            background: #2980b9;
+        }
+        
+        .btn-mini.active {
+            background: #e74c3c;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
+            font-weight: bold;
+        }
+        
+        .bubble-controls-overlay {
+            position: absolute;
+            bottom: 50px;
+            left: 70px;  /* Aumentato per evitare che esca fuori */
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 4px;
+            padding: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            display: flex;
+            gap: 3px;
+            z-index: 10;
+        }
+        
+        .zoom-controls {
+            display: flex;
+            gap: 2px;
+        }
+        
+        .pan-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 28px);
+            gap: 2px;
+        }
+        
+        .control-btn {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            font-size: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .control-btn:hover {
+            background: #2980b9;
+        }
+        
+        .control-btn:active {
+            background: #21618c;
+        }
+        
+        .scale-toggle {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 0.65rem;
+            padding-left: 8px;
+            border-left: 1px solid #ddd;
+        }
+        
+        .scale-toggle input[type="checkbox"] {
+            width: 12px;
+            height: 12px;
+        }
+
+        .k-display {
+            font-size: 0.65rem;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+
+        /* Temporal controls */
+        .temporal-controls {
+            position: absolute;
+            bottom: 5px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 4px;
+            padding: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: block;  /* Always visible */
+        }
+
+        .timeline-slider {
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        .playback-controls {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            font-size: 0.7rem;
+        }
+
+        .year-display {
+            font-weight: bold;
+            font-size: 0.9rem;
+            color: var(--header-bg);
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            z-index: 100;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        /* Table Styling per Schizzo */
+        .table-scroll { overflow-y: auto; flex-grow: 1; border: 1px solid #f0f0f0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th { background: #f8f9fa; border: 1px solid #dee2e6; padding: 6px; position: sticky; top: 0; }
+        td { border: 1px solid #eee; padding: 6px; text-align: center; }
+        
+        .col-selected-regions { background: #ebf5fb; font-weight: bold; width: 110px; text-align: left; }
+        
+        /* K Slider Styling */
+        .k-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 5px;
+        }
+        
+        /* Manual variable selection list */
+        .manual-variables-list {
+            display: none;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 2px solid #3498db;
+            border-radius: 6px;
+            padding: 12px;
+            background: #ecf0f1;
+            width: 100%;
+            margin-top: 8px;
+        }
+        
+        .manual-variables-list.active {
+            display: block;
+        }
+        
+        .variable-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+        
+        .variable-checkbox-item:hover {
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+        
+        .variable-checkbox-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .variable-checkbox-item label {
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        .k-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 120px;
+            height: 4px;
+            background: linear-gradient(to right, #3498db 0%, #3498db 50%, #ddd 50%, #ddd 100%);
+            border-radius: 2px;
+            outline: none;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+        
+        .k-slider:hover {
+            opacity: 1;
+        }
+        
+        .k-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #2c3e50;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .k-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            background: #2c3e50;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .k-value-display {
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: #2c3e50;
+            min-width: 20px;
+            text-align: center;
+        }
+        
+        /* PCP Improvements - MODIFIED */
+        .pcp-svg { 
+            width: 100%; 
+            height: auto;
+            min-height: 100%;
+            display: block;
+            cursor: default;
+        }
+        .pcp-axis { stroke: #bbb; stroke-width: 2; opacity: 0.7; }
+        .axis-label { fill: #999; font-size: 8px; text-anchor: middle; font-weight: bold; }
+        .pcp-axis-label-rotated { 
+            fill: #2c3e50; /* Darker for better visibility */
+            font-size: 10px; /* Reduced for less space */
+            text-anchor: start; 
+            font-weight: 600; /* Slightly lighter */
+            opacity: 0.9;
+        }
+        .pcp-path { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+        #italyMap { width: 100%; height: 100%; border-radius: 4px; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
+        .leaflet-container { user-select: none; -webkit-user-select: none; }
+        #clusterChart { cursor: crosshair; }
+        #bubbleChart { cursor: grab; }
+        #bubbleChart:active { cursor: grabbing; }
+        .btn-update { background: var(--accent); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="font-weight:600; font-size: 0.9rem;">Italian Demographics Dashboard</div>
+        <button class="btn-update" onclick="loadClusteringData()">Refresh Data</button>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="col">
+            <div class="card map-wrapper">
+                <div class="card-header">
+                    <span>Geospatial Distribution</span>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label style="font-size: 0.65rem; font-weight: normal;">Variable:</label>
+                        <select id="map-variable-select" class="mini-select" onchange="updateMapVariable()">
+                            <option value="none" selected>None</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="italyMap"></div>
+            </div>
+            <div class="card cluster-wrapper">
+                <div class="card-header">
+                    <span> Dimensionality Reduction (based on PCA and K-Means) <span class="k-display" id="k-display"></span></span>
+                    <div class="cluster-controls">
+                        <label style="font-size: 0.65rem;">K:</label>
+                        <select id="k-mode-select" class="mini-select" onchange="loadClusteringData()">
+                            <option value="auto" selected>Auto</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="clusterChart"></canvas>
+                    <div id="cluster-loading" class="loading-overlay">
+                        <span>Loading clustering data...</span>
+                    </div>
+                    <div id="temporal-controls" class="temporal-controls">
+                        <div class="playback-controls">
+                            <button class="btn-mini" onclick="playAnimation()">▶ Play</button>
+                            <button class="btn-mini" onclick="pauseAnimation()">⏸ Pause</button>
+                            <button class="btn-mini" onclick="resetAnimation()">↺ Reset</button>
+                            <select id="speed-select" class="mini-select">
+                                <option value="6000">Slow</option>
+                                <option value="3000" selected>Normal</option>
+                                <option value="1200">Fast</option>
+                                <option value="400">Very Fast</option>
+                            </select>
+                            <span class="year-display" id="year-display">2022</span>
+                        </div>
+                        <input type="range" id="timeline-slider" class="timeline-slider" 
+                               min="0" max="100" value="0" oninput="onTimelineChange()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <!-- PCP Card - BUTTONS REMOVED -->
+            <div class="card pcp-wrapper">
+                <div class="card-header">
+                    <span>Multivariate Profile (PCP)</span>
+                </div>
+                <div class="chart-container"><svg id="pcpSvg" class="pcp-svg"></svg></div>
+            </div>
+
+            <div class="card bubble-wrapper" style="overflow: hidden;">
+                <div class="card-header">
+                    <span>Demographics Analysis</span>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-left: 20px; padding-left: 5px;">
+                        <label style="font-size: 0.65rem; font-weight: normal;">X:</label>
+                        <select id="bubble-x-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                        <label style="font-size: 0.65rem; font-weight: normal;">Y:</label>
+                        <select id="bubble-y-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                        <label style="font-size: 0.65rem; font-weight: normal;">Size:</label>
+                        <select id="bubble-size-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
+                    </div>
+                </div>
+                <div class="chart-container" style="position: relative;">
+                    <canvas id="bubbleChart"></canvas>
+                    <div class="bubble-controls-overlay">
+                        <div class="scale-toggle">
+                            <input type="checkbox" id="bubble-log-scale-x" onchange="toggleBubbleScaleX()">
+                            <label for="bubble-log-scale-x" style="cursor: pointer;">Log X</label>
+                        </div>
+                        <div class="scale-toggle">
+                            <input type="checkbox" id="bubble-log-scale-y" onchange="toggleBubbleScaleY()">
+                            <label for="bubble-log-scale-y" style="cursor: pointer;">Log Y</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card stats-wrapper">
+                <div class="card-header">
+                    <span>Top K Diverse Variables</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 20px;">
+                        <!-- K slider a sinistra -->
+                        <div class="k-slider-container" id="k-slider-container">
+                            <label style="font-size: 0.65rem; font-weight: normal;">K:</label>
+                            <input type="range" id="k-slider" class="k-slider" 
+                                   min="1" max="32" value="15" 
+                                   oninput="updateTopKValue()">
+                            <span id="k-value-display" class="k-value-display">15</span>
+                        </div>
+                        <!-- Manual selection a destra -->
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="manual-mode-toggle" style="margin: 0; cursor: pointer;">
+                            <label style="font-size: 0.7rem; font-weight: 600; cursor: pointer; white-space: nowrap;" for="manual-mode-toggle">
+                                Manual Selection
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div id="manual-variables-list" class="manual-variables-list">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #3498db;">
+                        <span style="font-weight: bold; font-size: 0.75rem; color: #2c3e50;">Select Variables:</span>
+                        <button class="btn-mini" onclick="closeManualSelection()" style="background: #27ae60;">✓ OK</button>
+                    </div>
+                    <div id="manual-variables-checkboxes">
+                        <!-- Populated dynamically with checkboxes -->
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table>
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Server configuration
+        const SERVER_BASE = 'http://127.0.0.1:5000';
+        
+        // Region coordinates for map
+        const regionCoords = {
+            "Abruzzo": [42.35, 13.39],
+            "Basilicata": [40.63, 15.80],
+            "Calabria": [38.91, 16.59],
+            "Campania": [40.83, 14.25],
+            "Emilia-Romagna": [44.49, 11.34],
+            "Friuli-Venezia Giulia": [46.06, 13.24],
+            "Lazio": [41.89, 12.51],
+            "Liguria": [44.41, 8.95],
+            "Lombardia": [45.46, 9.19],
+            "Marche": [43.62, 13.51],
+            "Molise": [41.67, 14.60],
+            "Piemonte": [45.07, 7.69],
+            "Puglia": [41.13, 16.87],
+            "Sardegna": [39.22, 9.12],
+            "Sicilia": [38.12, 13.36],
+            "Toscana": [43.77, 11.25],
+            "Trentino-Alto Adige": [46.07, 11.12],
+            "Umbria": [43.11, 12.39],
+            "Valle d'Aosta": [45.74, 7.43],
+            "Veneto": [45.44, 12.32]
+        };
+
+        // Map setup
+        const map = L.map('italyMap', {
+            center: [42.0, 12.5],  // Moved south from 42.5 to 41.8 to show Sicily better
+            zoom: 5.0,  // Reduced zoom to show more area including Sicily
+            zoomControl: false,
+            dragging: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+            touchZoom: false
+        });
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+        const mapLayer = L.layerGroup().addTo(map);
+
+        // Cluster colors - Vivid palette
+        const clusterColors = [
+            '#FF6B6B', // Coral Red
+            '#51CF66', // Lime Green
+            '#FFD93D', // Sunny Yellow
+            '#22D3EE', // Cyan Turquoise
+            '#A78BFA', // Purple (extra)
+            '#FB923C', // Orange (extra)
+            '#EC4899', // Pink (extra)
+            '#14B8A6'  // Teal (extra)
+        ];
+
+        // State variables
+        let currentDataSet = [];
+        let currentClustering = null;
+        let selectedRegionNames = [];
+        let isDrawing = false;
+        let brushStart = null;
+        let brushEnd = null;
+        let hasMoved = false;
+        let currentYearlyData = null;
+        let commonIndicators = ['BIRTHRATE', 'DEATHRATE', 'LIFEEXP0T', 'DEPENDRATE', 'MARRATE'];
+        let topKValue = 15; // Default K value for top variables
+        let orderedPCPVariables = [];
+        let isManualTopKMode = false; // Toggle for manual variable selection
+        let manualSelectedVariables = []; // User-selected variables in manual mode
+        
+        // PCP state - REMOVED ZOOM/PAN
+        let indicatorNames = {}; // Map DATA_TYPE -> readable name
+        let selectedVariable = null; // Currently selected variable for map coloring
+        let globalScales = {}; // Global min-max for each variable across all years
+        let globalScalesCalculated = false;  // Track if scales are already calculated
+        let geoJsonLayer = null; // GeoJSON layer for regions
+        let regionGeoJson = null; // GeoJSON data
+        
+        // ============================================
+        // BUBBLE CHART STATE MANAGEMENT
+        // ============================================
+        
+        // Variable configuration for axes and bubble size
+        let bubbleXVar = 'BIRTHRATE';
+        let bubbleYVar = 'LIFEEXP0T';
+        let bubbleSizeVar = 'DEATHRATE';
+        
+        // Trail tracking for temporal mode
+        let bubbleTrails = {}; // region -> array of {x, y, size, year}
+        let clickedBubbleRegions = []; // Regions selected for trail visualization
+        
+        // Hover state for interactive crosshair
+        let bubbleHoverState = {
+            active: false,
+            region: null,
+            position: { x: 0, y: 0 },
+            values: { x: 0, y: 0, size: 0 }
+        };
+        
+        // Animation variables
+        let timeseriesData = null;
+        let animationInterval = null;
+        let currentTimeIndex = 0;
+        let isAnimationPlaying = false;
+
+        // Brush selection plugin
+        const brushPlugin = {
+            id: 'brushPlugin',
+            afterDatasetsDraw: (chart) => {
+                if (brushStart && brushEnd) {
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
+                    ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+
+                    const x = Math.min(brushStart.x, brushEnd.x);
+                    const y = Math.min(brushStart.y, brushEnd.y);
+                    const w = Math.abs(brushEnd.x - brushStart.x);
+                    const h = Math.abs(brushEnd.y - brushStart.y);
+                    
+                    ctx.fillRect(x, y, w, h);
+                    ctx.strokeRect(x, y, w, h);
+                    ctx.restore();
+                }
+            }
+        };
+
+        // Chart setup
+        const clusterChart = new Chart(document.getElementById('clusterChart'), {
+            type: 'scatter',
+            data: { datasets: [] },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0 // Disable Chart.js animation to have smooth manual interpolation
+                },
+                plugins: { 
+                    legend: { 
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: { size: 10 },
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const region = context.dataset.regionNames[context.dataIndex];
+                                const cluster = context.dataset.label;
+                                return `${region} - ${cluster}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: 'Component 1', font: { size: 10 } },
+                        min: -10,
+                        max: 10
+                    },
+                    y: { 
+                        title: { display: true, text: 'Component 2', font: { size: 10 } },
+                        min: -10,
+                        max: 10
+                    }
+                }
+            },
+            plugins: [brushPlugin]
+        });
+
+        // ============================================
+        // BUBBLE CHART PLUGINS
+        // ============================================
+        
+        /**
+         * Plugin: Shadow Effect - Adds depth to bubbles
+         */
+        const bubbleShadowPlugin = {
+            id: 'bubbleShadow',
+            beforeDatasetsDraw: (chart) => {
+                const ctx = chart.ctx;
+                ctx.save();
+                
+                // Aggiungi ombra per tutte le bubble
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+            },
+            afterDatasetsDraw: (chart) => {
+                const ctx = chart.ctx;
+                ctx.restore();
+            }
+        };
+        
+        /**
+         * Plugin: Year Watermark - Displays current year in temporal mode
+         */
+        const bubbleYearWatermarkPlugin = {
+            id: 'bubbleYearWatermark',
+            beforeDatasetsDraw: (chart) => {
+                if (!timeseriesData || currentTimeIndex >= timeseriesData.length) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const centerX = (chartArea.left + chartArea.right) / 2;
+                const centerY = (chartArea.top + chartArea.bottom) / 2;
+                const year = timeseriesData[currentTimeIndex].year;
+                
+                ctx.save();
+                ctx.font = 'bold 90px Segoe UI';
+                ctx.fillStyle = 'rgba(200, 200, 200, 0.12)';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(year, centerX, centerY);
+                ctx.restore();
+            }
+        };
+        
+        /**
+         * Plugin: Interactive Crosshair - Shows crosshair lines and axis labels
+         */
+        const bubbleCrosshairPlugin = {
+            id: 'bubbleCrosshair',
+            afterDatasetsDraw: (chart) => {
+                if (!bubbleHoverState.active) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const { x, y } = bubbleHoverState.position;
+                const { x: xVal, y: yVal } = bubbleHoverState.values;
+                
+                ctx.save();
+                
+                // Draw crosshair lines
+                ctx.setLineDash([6, 4]);
+                ctx.strokeStyle = 'rgba(100, 100, 100, 0.6)';
+                ctx.lineWidth = 1.5;
+                
+                // Vertical line
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+                
+                // Horizontal line
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(chartArea.left, y);
+                ctx.stroke();
+                
+                // Draw axis labels
+                ctx.setLineDash([]);
+                ctx.font = 'bold 11px Segoe UI';
+                
+                // X-axis label
+                const xText = xVal.toFixed(2);
+                const xTextWidth = ctx.measureText(xText).width;
+                const xLabelX = Math.max(chartArea.left + 5, Math.min(x - xTextWidth / 2, chartArea.right - xTextWidth - 5));
+                const xLabelY = chartArea.bottom + 18;
+                
+                drawLabelBox(ctx, xLabelX, xLabelY, xText, '#3498db');
+                
+                // Y-axis label
+                const yText = yVal.toFixed(2);
+                const yTextWidth = ctx.measureText(yText).width;
+                const yLabelX = chartArea.left - yTextWidth - 12;
+                const yLabelY = y + 5;
+                
+                drawLabelBox(ctx, yLabelX, yLabelY, yText, '#e74c3c');
+                
+                ctx.restore();
+            }
+        };
+        
+        /**
+         * Plugin: Enhanced Tooltip - Shows detailed bubble information
+         */
+        const bubbleTooltipPlugin = {
+            id: 'bubbleTooltip',
+            afterDatasetsDraw: (chart) => {
+                if (!bubbleHoverState.active || !bubbleHoverState.region) return;
+                
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const { x, y } = bubbleHoverState.position;
+                const { x: xVal, y: yVal, size: sizeVal } = bubbleHoverState.values;
+                const region = bubbleHoverState.region;
+                
+                // Tooltip content
+                const xName = indicatorNames[bubbleXVar] || bubbleXVar;
+                const yName = indicatorNames[bubbleYVar] || bubbleYVar;
+                const sizeName = indicatorNames[bubbleSizeVar] || bubbleSizeVar;
+                
+                const lines = [
+                    { label: 'Region', value: region, bold: true },
+                    { label: xName, value: xVal.toFixed(2) },
+                    { label: yName, value: yVal.toFixed(2) },
+                    { label: sizeName, value: sizeVal.toFixed(2), color: '#ff7f00' }
+                ];
+                
+                // Calculate tooltip dimensions
+                ctx.font = '11px Segoe UI';
+                const lineHeight = 18;
+                const padding = 10;
+                const maxLabelWidth = Math.max(...lines.map(l => ctx.measureText(l.label + ':').width));
+                const maxValueWidth = Math.max(...lines.map(l => ctx.measureText(l.value).width));
+                const tooltipWidth = maxLabelWidth + maxValueWidth + padding * 3;
+                const tooltipHeight = lines.length * lineHeight + padding * 2;
+                
+                // Position tooltip (avoid edges)
+                let tooltipX = x + 15;
+                let tooltipY = y - tooltipHeight / 2;
+                
+                if (tooltipX + tooltipWidth > chartArea.right) {
+                    tooltipX = x - tooltipWidth - 15;
+                }
+                if (tooltipY < chartArea.top) {
+                    tooltipY = chartArea.top;
+                }
+                if (tooltipY + tooltipHeight > chartArea.bottom) {
+                    tooltipY = chartArea.bottom - tooltipHeight;
+                }
+                
+                ctx.save();
+                
+                // Draw tooltip background
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+                
+                roundRect(ctx, tooltipX, tooltipY, tooltipWidth, tooltipHeight, 6);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.stroke();
+                
+                // Draw tooltip content
+                let currentY = tooltipY + padding + 12;
+                lines.forEach(line => {
+                    // Label
+                    ctx.font = line.bold ? 'bold 12px Segoe UI' : '11px Segoe UI';
+                    ctx.fillStyle = '#555';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(line.label + ':', tooltipX + padding, currentY);
+                    
+                    // Value
+                    ctx.font = line.bold ? 'bold 12px Segoe UI' : 'bold 11px Segoe UI';
+                    ctx.fillStyle = line.color || '#2c3e50';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(line.value, tooltipX + tooltipWidth - padding, currentY);
+                    
+                    currentY += lineHeight;
+                });
+                
+                ctx.restore();
+            }
+        };
+        
+        // ============================================
+        // BUBBLE CHART HELPER FUNCTIONS
+        // ============================================
+        
+        /**
+         * Draw a label box with background and border
+         */
+        function drawLabelBox(ctx, x, y, text, accentColor = '#3498db') {
+            const textWidth = ctx.measureText(text).width;
+            const boxPadding = 5;
+            const boxWidth = textWidth + boxPadding * 2;
+            const boxHeight = 18;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.fillRect(x - boxPadding, y - 13, boxWidth, boxHeight);
+            
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - boxPadding, y - 13, boxWidth, boxHeight);
+            
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillText(text, x, y);
+        }
+        
+        /**
+         * Draw rounded rectangle
+         */
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+        
+        /**
+         * Convert hex color to rgba
+         */
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+        
+        /**
+         * Calculate optimal axis range for bubble chart
+         */
+        function calculateAxisRange(values, paddingPercent = 0.1) {
+            if (!values || values.length === 0) {
+                return { min: 0, max: 100 };
+            }
+            
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const range = max - min;
+            
+            // Add padding to prevent bubbles from touching edges
+            const padding = range * paddingPercent;
+            
+            return {
+                min: min - padding,
+                max: max + padding
+            };
+        }
+        
+        /**
+         * Calculate bubble radius based on normalized size value
+         * @param {number} sizeValue - Raw size value
+         * @param {object} sizeScale - Global scale with min/max
+         * @returns {number} - Radius scaled from 0.5x to 3x, always visible
+         */
+        function calculateBubbleRadius(sizeValue, sizeScale) {
+            if (!sizeScale || sizeScale.max === sizeScale.min) {
+                return 8; // Default size minimo se scale è invalid
+            }
+            
+            // Normalizza tra 0 e 1
+            const normalized = Math.max(0, Math.min(1, (sizeValue - sizeScale.min) / (sizeScale.max - sizeScale.min)));
+            
+            // Dimensione base
+            const baseSize = 12;
+            
+            // Scala da 0.5x a 3x
+            const minMultiplier = 0.5;
+            const maxMultiplier = 3.0;
+            const multiplier = minMultiplier + (normalized * (maxMultiplier - minMultiplier));
+            
+            // Garantisce un raggio minimo di almeno 5px per visibilità
+            return Math.max(5, baseSize * multiplier);
+        }
+        
+        /**
+         * Get region data for bubble chart
+         */
+        function getRegionBubbleData(regionName) {
+            const values = {};
+            
+            if (!currentYearlyData) return null;
+            
+            currentYearlyData.forEach(row => {
+                if (row.region === regionName) {
+                    values[row.data_type] = row.value;
+                }
+            });
+            
+            const xVal = values[bubbleXVar];
+            const yVal = values[bubbleYVar];
+            const sizeVal = values[bubbleSizeVar];
+            
+            if (xVal === undefined || yVal === undefined || sizeVal === undefined) {
+                return null;
+            }
+            
+            return { x: xVal, y: yVal, size: sizeVal, allValues: values };
+        }
+        
+        /**
+         * Get bubble color based on size value (heatmap)
+         */
+        function getBubbleColor(sizeValue) {
+            const sizeScale = globalScales[bubbleSizeVar];
+            if (!sizeScale || sizeScale.max === sizeScale.min) {
+                return '#fdae6b';
+            }
+            
+            const normalized = (sizeValue - sizeScale.min) / (sizeScale.max - sizeScale.min);
+            return getHeatmapColor(normalized);
+        }
+        
+        /**
+         * Reset bubble zoom
+         */
+        function resetBubbleZoom() {
+            bubbleChart.resetZoom();
+            bubbleHoverState.active = false;
+            bubbleChart.update('none');
+        }
+        
+        /**
+         * Zoom in on bubble chart
+         */
+        function bubbleZoomIn() {
+            bubbleChart.zoom(1.2);
+        }
+        
+        /**
+         * Zoom out on bubble chart
+         */
+        function bubbleZoomOut() {
+            bubbleChart.zoom(0.8);
+        }
+        
+        /**
+         * Toggle logarithmic scale for X axis
+         */
+        function toggleBubbleScaleX() {
+            const isLog = document.getElementById('bubble-log-scale-x').checked;
+            
+            // Update scale type for X axis
+            bubbleChart.options.scales.x.type = isLog ? 'logarithmic' : 'linear';
+            
+            // Update chart
+            updateBubbleChart();
+            console.log('X axis scale changed to:', isLog ? 'logarithmic' : 'linear');
+        }
+        
+        /**
+         * Toggle logarithmic scale for Y axis
+         */
+        function toggleBubbleScaleY() {
+            const isLog = document.getElementById('bubble-log-scale-y').checked;
+            
+            // Update scale type for Y axis
+            bubbleChart.options.scales.y.type = isLog ? 'logarithmic' : 'linear';
+            
+            // Update chart
+            updateBubbleChart();
+            console.log('Y axis scale changed to:', isLog ? 'logarithmic' : 'linear');
+        }
+        
+        // ============================================
+        // BUBBLE CHART EVENT HANDLERS
+        // ============================================
+        
+        /**
+         * Handle bubble click events
+         */
+        function handleBubbleClick(event, elements) {
+            const isTemporalMode = true; // Always in temporal mode
+            
+            if (elements.length > 0) {
+                const datasetIndex = elements[0].datasetIndex;
+                const dataset = bubbleChart.data.datasets[datasetIndex];
+                
+                // Ignora i click sulle trail
+                if (!dataset.regionName || dataset.isTrail) return;
+                
+                const region = dataset.regionName;
+                
+                if (isTemporalMode) {
+                    const index = clickedBubbleRegions.indexOf(region);
+                    if (index >= 0) {
+                        clickedBubbleRegions.splice(index, 1);
+                        console.log('Trail hidden:', region);
+                    } else {
+                        clickedBubbleRegions.push(region);
+                        console.log('Trail shown:', region);
+                    }
+                    updateBubbleChart();
+                } else {
+                    console.log('Clicked region:', region);
+                }
+            } else {
+                if (clickedBubbleRegions.length > 0) {
+                    clickedBubbleRegions = [];
+                    console.log('All trails cleared');
+                    updateBubbleChart();
+                }
+            }
+        }
+        
+        /**
+         * Handle bubble hover events
+         */
+        function handleBubbleHover(event, elements) {
+            const canvas = event.native.target;
+            
+            if (elements.length > 0) {
+                const element = elements[0];
+                const datasetIndex = element.datasetIndex;
+                const dataIndex = element.index;
+                const dataset = bubbleChart.data.datasets[datasetIndex];
+                const dataPoint = dataset.data[dataIndex];
+                
+                if (!dataPoint || !dataset.regionName) {
+                    canvas.style.cursor = 'default';
+                    bubbleHoverState.active = false;
+                    bubbleChart.update('none');
+                    return;
+                }
+                
+                canvas.style.cursor = 'pointer';
+                
+                const xScale = bubbleChart.scales.x;
+                const yScale = bubbleChart.scales.y;
+                
+                bubbleHoverState.active = true;
+                bubbleHoverState.region = dataset.regionName;
+                bubbleHoverState.position = {
+                    x: xScale.getPixelForValue(dataPoint.x),
+                    y: yScale.getPixelForValue(dataPoint.y)
+                };
+                bubbleHoverState.values = {
+                    x: dataPoint.x,
+                    y: dataPoint.y,
+                    size: getRegionBubbleData(dataset.regionName)?.size || 0
+                };
+                
+                bubbleChart.update('none');
+            } else {
+                canvas.style.cursor = 'default';
+                bubbleHoverState.active = false;
+                bubbleChart.update('none');
+            }
+        }
+
+        // ============================================
+        // BUBBLE CHART CONFIGURATION
+        // ============================================
+        
+        const bubbleChart = new Chart(document.getElementById('bubbleChart'), {
+            type: 'bubble',
+            data: { datasets: [] },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                layout: {
+                    padding: {
+                        left: 10,
+                        right: 30,  // Extra padding a destra per evitare clipping
+                        top: 10,
+                        bottom: 25  // Aumentato per mostrare meglio le etichette
+                    }
+                },
+                scales: { 
+                    x: { 
+                        type: 'linear',  // Can be changed to 'logarithmic'
+                        beginAtZero: true,  // Force start from 0
+                        title: { 
+                            display: true, 
+                            text: 'Birth Rate', 
+                            font: { size: 11, weight: '600' },
+                            color: '#2c3e50'
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        ticks: { 
+                            font: { size: 10 },
+                            maxTicksLimit: 10,
+                            callback: function(value, index, ticks) {
+                                // Mostra solo valori interi
+                                return Number.isInteger(value) ? value : null;
+                            }
+                        },
+                        // Scales will be explicitly set on update
+                        min: 0,
+                        max: 100
+                    }, 
+                    y: { 
+                        type: 'linear',  // Can be changed to 'logarithmic'
+                        beginAtZero: true,  // Force start from 0
+                        title: { 
+                            display: true, 
+                            text: 'Life Expectancy', 
+                            font: { size: 11, weight: '600' },
+                            color: '#2c3e50'
+                        },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        ticks: { 
+                            font: { size: 10 },
+                            maxTicksLimit: 10,
+                            callback: function(value, index, ticks) {
+                                // Mostra solo valori interi
+                                return Number.isInteger(value) ? value : null;
+                            }
+                        },
+                        // Fissa la larghezza dell'asse Y per evitare movimenti
+                        afterFit: function(scaleInstance) {
+                            scaleInstance.width = 65; // Larghezza fissa
+                        },
+                        // Scales will be explicitly set on update
+                        min: 0,
+                        max: 100
+                    } 
+                },
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                    zoom: {
+                        pan: {
+                            enabled: true,
+                            mode: 'xy',
+                            modifierKey: null,  // No modifier key needed - drag freely
+                            threshold: 5
+                        },
+                        zoom: {
+                            wheel: {
+                                enabled: false  // Zoom disabled
+                            },
+                            pinch: { 
+                                enabled: false
+                            },
+                            mode: 'xy'
+                        }
+                    }
+                },
+                onClick: handleBubbleClick,
+                onHover: (event, elements) => {
+                    // Keep default cursor, no pointer change
+                    const canvas = event.native.target;
+                    canvas.style.cursor = 'default';
+                    
+                    if (elements.length > 0 && elements[0].element) {
+                        handleBubbleHover(event, elements);
+                    } else {
+                        bubbleHoverState.active = false;
+                        bubbleChart.update('none');
+                    }
+                }
+            },
+            plugins: [
+                bubbleShadowPlugin,
+                bubbleYearWatermarkPlugin,
+                bubbleCrosshairPlugin,
+                bubbleTooltipPlugin
+            ]
+        });
+        
+        // ============================================
+        // BUBBLE CHART VARIABLE CHANGE & UPDATE
+        // ============================================
+        
+        /**
+         * Handle variable selection change for bubble chart axes
+         */
+        function onBubbleVariableChange() {
+            const xSelect = document.getElementById('bubble-x-select');
+            const ySelect = document.getElementById('bubble-y-select');
+            const sizeSelect = document.getElementById('bubble-size-select');
+            
+            if (xSelect?.value) bubbleXVar = xSelect.value;
+            if (ySelect?.value) bubbleYVar = ySelect.value;
+            if (sizeSelect?.value) bubbleSizeVar = sizeSelect.value;
+            
+            console.log('Bubble variables updated:', { x: bubbleXVar, y: bubbleYVar, size: bubbleSizeVar });
+            
+            // Clear trails and selections when changing variables
+            bubbleTrails = {};
+            clickedBubbleRegions = [];
+            
+            // Reset zoom state to ensure proper scaling
+            bubbleChart.resetZoom();
+            
+            // Update chart with new variables
+            updateBubbleChart();
+        }
+        
+        /**
+         * Main function to update bubble chart visualization
+         */
+        function updateBubbleChart() {
+            if (!currentYearlyData || !currentClustering) {
+                console.log('Missing data for bubble chart');
+                clearBubbleChart();
+                return;
+            }
+            
+            // Se nessuna regione è selezionata, mostra tutti i cluster
+            const regionsToShow = selectedRegionNames.length === 0 
+                ? currentClustering.regions 
+                : selectedRegionNames;
+            
+            // Verify scales are available
+            if (!globalScalesCalculated) {
+                console.warn('⚠️ Global scales not yet calculated - waiting...');
+                return;
+            }
+            
+            const sizeScale = globalScales[bubbleSizeVar];
+            if (!sizeScale) {
+                console.log('No scale for size variable:', bubbleSizeVar);
+                clearBubbleChart();
+                return;
+            }
+            
+            console.log(`Updating bubble chart: ${regionsToShow.length} regions`);
+            
+            const isTemporalMode = true; // Always in temporal mode
+            const datasets = [];
+            
+            regionsToShow.forEach(region => {
+                const regionData = getRegionBubbleData(region);
+                if (!regionData) {
+                    console.warn(`No data for region: ${region}`);
+                    return;
+                }
+                
+                const { x: xVal, y: yVal, size: sizeVal } = regionData;
+                
+                const regionIdx = currentClustering.regions.indexOf(region);
+                const clusterId = regionIdx >= 0 ? currentClustering.clusters[regionIdx] : 0;
+                
+                // Use cluster color for bubble
+                const fillColor = clusterColors[clusterId % clusterColors.length];
+                const isClicked = clickedBubbleRegions.includes(region);
+                const isAnyClicked = clickedBubbleRegions.length > 0;
+                
+                // Opacità e stile migliorati - tre stati distinti
+                let bubbleOpacity, borderWidth, borderColor;
+                if (isClicked) {
+                    // Stato 2: Bubble selezionata - pienamente saturata e nitida
+                    bubbleOpacity = 0.95;
+                    borderWidth = 2;
+                    borderColor = '#2c3e50'; // Bordo scuro sottile
+                } else if (isAnyClicked) {
+                    // Stato 2: Altre bubble - sbiadite e desaturate al 30%
+                    bubbleOpacity = 0.30;
+                    borderWidth = 1.5;
+                    borderColor = '#2c3e50';
+                } else {
+                    // Stato 1: Tutte le bubble vivaci e opache
+                    bubbleOpacity = 0.85;
+                    borderWidth = 2;
+                    borderColor = '#2c3e50'; // Bordo scuro sottile
+                }
+                
+                const radius = calculateBubbleRadius(sizeVal, sizeScale);
+                
+                datasets.push({
+                    label: region,
+                    data: [{
+                        x: xVal,
+                        y: yVal,
+                        r: radius
+                    }],
+                    backgroundColor: hexToRgba(fillColor, bubbleOpacity),
+                    borderColor: borderColor,
+                    borderWidth: borderWidth,
+                    hoverBorderWidth: 5,
+                    hoverBorderColor: '#ffffff', // Bordo bianco al hover per contrasto
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    regionName: region,
+                    clip: false
+                });
+                
+                if (isTemporalMode && isClicked && bubbleTrails[region]?.length > 0) {
+                    const trail = bubbleTrails[region];
+                    
+                    // Crea punti della scia con dimensioni progressive
+                    const trailPoints = trail.map((point, idx) => {
+                        return {
+                            x: point.x,
+                            y: point.y,
+                            r: calculateBubbleRadius(point.size, sizeScale) * 0.5
+                        };
+                    });
+                    
+                    // Stato 3: Punti lungo la scia - stesso colore solido, effetto tubo
+                    datasets.push({
+                        label: `${region} Trail Points`,
+                        data: trailPoints,
+                        backgroundColor: hexToRgba(fillColor, 0.70), // Colore solido uniforme
+                        borderColor: '#2c3e50', // Contorno scuro visibile
+                        borderWidth: 1, // Contorno sottile per ogni passo
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        showLine: false,
+                        clip: false,
+                        order: 9, // Dietro le bubble
+                        isTrail: true // Flag per identificare le trail
+                    });
+                }
+            });
+            
+            // Use fixed axis ranges based on global scales
+            const xScale = globalScales[bubbleXVar];
+            const yScale = globalScales[bubbleYVar];
+            const isLogX = document.getElementById('bubble-log-scale-x')?.checked || false;
+            const isLogY = document.getElementById('bubble-log-scale-y')?.checked || false;
+            
+            if (xScale && yScale) {
+                // CRITICAL: Force min=0 for linear scale, 0.1 for logarithmic
+                const xMin = isLogX ? 0.1 : 0;
+                const yMin = isLogY ? 0.1 : 0;
+                
+                // CRITICAL: Use pre-calculated axisMax (max * 1.15) - never recalculate
+                const xMax = xScale.axisMax;  // Already includes 15% buffer
+                const yMax = yScale.axisMax;  // Already includes 15% buffer
+                
+                // FORCE set the axis scales - override any auto-calculation
+                bubbleChart.options.scales.x.min = xMin;
+                bubbleChart.options.scales.x.max = xMax;
+                bubbleChart.options.scales.y.min = yMin;
+                bubbleChart.options.scales.y.max = yMax;
+                
+                // Disable auto-scaling
+                bubbleChart.options.scales.x.beginAtZero = !isLogX;
+                bubbleChart.options.scales.y.beginAtZero = !isLogY;
+                
+                console.log(`🔒 ASSI BLOCCATI: X(${bubbleXVar})[${xMin} → ${xMax.toFixed(2)}], Y(${bubbleYVar})[${yMin} → ${yMax.toFixed(2)}]`);
+            } else {
+                console.warn('⚠️ Scale non trovate per:', bubbleXVar, bubbleYVar);
+            }
+            
+            bubbleChart.data.datasets = datasets;
+            
+            updateBubbleAxisLabels();
+            
+            // Update chart with 'reset' mode to apply all changes including scale limits
+            bubbleChart.update('reset');
+            
+            bubbleChart.update('none');
+            
+            console.log(`Bubble chart updated with ${datasets.length} datasets using fixed axes`);
+        }
+        
+        /**
+         * Update bubble chart axis labels
+         */
+        function updateBubbleAxisLabels() {
+            const xLabel = indicatorNames[bubbleXVar] || bubbleXVar;
+            const yLabel = indicatorNames[bubbleYVar] || bubbleYVar;
+            const sizeLabel = indicatorNames[bubbleSizeVar] || bubbleSizeVar;
+            
+            if (!bubbleChart.options.scales.x.title) {
+                bubbleChart.options.scales.x.title = { display: true };
+            }
+            if (!bubbleChart.options.scales.y.title) {
+                bubbleChart.options.scales.y.title = { display: true };
+            }
+            
+            bubbleChart.options.scales.x.title.text = xLabel;
+            bubbleChart.options.scales.x.title.display = true;
+            
+            // Usa label separata per evitare movimenti - formato fisso
+            bubbleChart.options.scales.y.title.text = yLabel;
+            bubbleChart.options.scales.y.title.display = true;
+        }
+        
+        /**
+         * Clear bubble chart
+         */
+        function clearBubbleChart() {
+            bubbleChart.data.datasets = [];
+            bubbleHoverState.active = false;
+            bubbleChart.update('none');
+        }
+
+        // ============================================
+        // SERVER & DATA LOADING
+        // ============================================
+
+        // Fetch clustering data from server
+        async function loadClusteringData() {
+            const method = 'pca';  // Fixed to PCA
+            const clustering = 'kmeans';  // Fixed to K-means
+            const isTemporalMode = true;  // Always in temporal mode
+            const kMode = document.getElementById('k-mode-select').value;
+            const isManualK = kMode !== 'auto';
+            const manualK = parseInt(kMode);
+            
+            // Do NOT reset global scales - they should be calculated once and reused
+            
+            showLoading(true);
+            
+            try {
+                if (isTemporalMode) {
+                    if (isManualK) {
+                        // Manual K + Temporal: load each year with manual K
+                        const df = await fetch(`${SERVER_BASE}/yearly_data?year=2022`);
+                        const tempData = await df.json();
+                        
+                        // Get all years from dataset
+                        const years = [];
+                        for (let year = 2002; year <= 2050; year++) {
+                            years.push(year);
+                        }
+                        
+                        // Load clustering for each year with manual K
+                        const timeseries = [];
+                        for (const year of years) {
+                            const response = await fetch(`${SERVER_BASE}/clustering_manual?year=${year}&method=${method}&clustering=${clustering}&k=${manualK}`);
+                            const data = await response.json();
+                            if (data.status === 'success') {
+                                timeseries.push(data);
+                            }
+                        }
+                        
+                        if (timeseries.length > 0) {
+                            timeseriesData = timeseries;
+                            
+                            // Preload all years to calculate global scales
+                            if (!globalScalesCalculated) {
+                                console.log('Preloading all years to calculate global scales...');
+                                await preloadAllYearsForScales(years);
+                            }
+                            
+                            setupTimeline();
+                            updateClusterChart(timeseriesData[0]);
+                            loadYearlyData(timeseriesData[0].year);
+                        } else {
+                            alert('Error loading manual timeseries');
+                        }
+                    } else {
+                        // Auto K + Temporal: use precomputed
+                        const response = await fetch(`${SERVER_BASE}/clustering_timeseries?method=${method}&clustering=${clustering}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            timeseriesData = data.timeseries;
+                            
+                            // Preload all years to calculate global scales
+                            if (!globalScalesCalculated) {
+                                console.log('Preloading all years to calculate global scales...');
+                                const years = timeseriesData.map(ts => ts.year);
+                                await preloadAllYearsForScales(years);
+                            }
+                            
+                            setupTimeline();
+                            updateClusterChart(timeseriesData[0]);
+                            loadYearlyData(timeseriesData[0].year);
+                        } else {
+                            alert('Error loading timeseries: ' + data.message);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to load clustering data. Make sure the server is running.');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function loadYearlyData(year) {
+            try {
+                console.log('Loading yearly data for year:', year);
+                const response = await fetch(`${SERVER_BASE}/yearly_data?year=${year}`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    currentYearlyData = data.data;
+                    console.log('Yearly data loaded:', currentYearlyData.length, 'rows');
+                    console.log('Sample data:', currentYearlyData.slice(0, 3));
+                    
+                    // Don't automatically initialize all regions as selected
+                    // User should manually select regions they want to analyze
+                    
+                    // Build indicator names map
+                    indicatorNames = {};
+                    currentYearlyData.forEach(row => {
+                        if (row.indicator && row.data_type && !indicatorNames[row.data_type]) {
+                            // Extract name before "(" if present
+                            const fullName = row.indicator;
+                            const nameBeforeParen = fullName.split('(')[0].trim();
+                            indicatorNames[row.data_type] = nameBeforeParen;
+                        }
+                    });
+                    console.log('Indicator names mapped:', Object.keys(indicatorNames).length);
+                    
+                    // Update map variable dropdown
+                    populateVariableDropdown();
+                    
+                    // Calculate global scales if not already done (for non-temporal mode)
+                    if (!globalScalesCalculated) {
+                        calculateGlobalScales();
+                    }
+                    
+                    updateLinkedViews();
+                    
+                    // Update bubble trails for clicked regions
+                    if (clickedBubbleRegions.length > 0) {
+                        updateBubbleTrails(year);
+                    }
+                } else {
+                    console.error('Error loading yearly data:', data.message);
+                }
+            } catch (error) {
+                console.error('Error fetching yearly data:', error);
+            }
+        }
+        
+        /**
+         * Preload all years to calculate global scales once
+         */
+        async function preloadAllYearsForScales(years) {
+            try {
+                console.log('⏳ Calcolo scale globali da', years.length, 'anni (2002-2050)...');
+                
+                // Keep existing scales if already calculated - don't reset
+                if (globalScalesCalculated) {
+                    console.log('✅ Scale già calcolate - riutilizzo valori salvati');
+                    return;
+                }
+                
+                // Initialize globalScales only if empty
+                if (Object.keys(globalScales).length === 0) {
+                    globalScales = {};
+                }
+                
+                // Fetch data for all years
+                for (const year of years) {
+                    const response = await fetch(`${SERVER_BASE}/yearly_data?year=${year}`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'success') {
+                        const yearData = data.data;
+                        const variables = [...new Set(yearData.map(row => row.data_type))];
+                        
+                        // For each variable, track global min=0 and max across all years
+                        variables.forEach(variable => {
+                            const values = yearData
+                                .filter(row => row.data_type === variable)
+                                .map(row => row.value)
+                                .filter(v => v !== null && v !== undefined);
+                            
+                            if (values.length > 0) {
+                                const currentMax = Math.max(...values);
+                                
+                                if (!globalScales[variable]) {
+                                    // First time - set min to 0, max to current, and pre-calculate axis max
+                                    globalScales[variable] = {
+                                        min: 0,
+                                        max: currentMax,
+                                        axisMax: currentMax * 1.15  // Pre-calculate axis max with 15% buffer
+                                    };
+                                } else {
+                                    // Update max and recalculate axis max
+                                    globalScales[variable].max = Math.max(globalScales[variable].max, currentMax);
+                                    globalScales[variable].axisMax = globalScales[variable].max * 1.15;
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                globalScalesCalculated = true;
+                console.log('✅ SCALE GLOBALI SALVATE per', Object.keys(globalScales).length, 'variabili');
+                console.log('📊 Range fissi salvati (riutilizzati per sempre):');
+                Object.entries(globalScales).forEach(([variable, scale]) => {
+                    console.log(`   ${variable}: max=${scale.max.toFixed(2)} → axisMax=${scale.axisMax.toFixed(2)}`);
+                });
+            } catch (error) {
+                console.error('Error preloading years for scales:', error);
+            }
+        }
+        
+        /**
+         * Update bubble trails for temporal animation
+         */
+        function updateBubbleTrails(year) {
+            const isTemporalMode = true; // Always in temporal mode
+            if (!isTemporalMode || !currentYearlyData) return;
+            
+            clickedBubbleRegions.forEach(clickedRegion => {
+                if (!bubbleTrails[clickedRegion]) {
+                    bubbleTrails[clickedRegion] = [];
+                }
+                
+                const regionData = getRegionBubbleData(clickedRegion);
+                if (!regionData) return;
+                
+                // Non aggiungere se l'anno esiste già (previene accumulo quando si va avanti/indietro)
+                const existingYearIndex = bubbleTrails[clickedRegion].findIndex(t => t.year === year);
+                if (existingYearIndex >= 0) {
+                    // Aggiorna il punto esistente invece di aggiungerne uno nuovo
+                    bubbleTrails[clickedRegion][existingYearIndex] = {
+                        x: regionData.x,
+                        y: regionData.y,
+                        size: regionData.size,
+                        year: year
+                    };
+                } else {
+                    // Aggiungi nuovo punto solo se l'anno non esiste
+                    bubbleTrails[clickedRegion].push({
+                        x: regionData.x,
+                        y: regionData.y,
+                        size: regionData.size,
+                        year: year
+                    });
+                    
+                    // Ordina per anno per mantenere la sequenza corretta
+                    bubbleTrails[clickedRegion].sort((a, b) => a.year - b.year);
+                }
+            });
+        }
+
+        function updateClusterChart(data) {
+            currentClustering = data;
+            
+            // Group points by cluster
+            const clusterGroups = {};
+            for (let i = 0; i < data.regions.length; i++) {
+                const clusterId = data.clusters[i];
+                if (!clusterGroups[clusterId]) {
+                    clusterGroups[clusterId] = {
+                        points: [],
+                        regions: []
+                    };
+                }
+                clusterGroups[clusterId].points.push(data.points[i]);
+                clusterGroups[clusterId].regions.push(data.regions[i]);
+            }
+            
+            // Create datasets for each cluster
+            const datasets = [];
+            Object.keys(clusterGroups).sort((a, b) => parseInt(a) - parseInt(b)).forEach((clusterId, idx) => {
+                const group = clusterGroups[clusterId];
+                
+                // Create arrays for styling (radius and border)
+                const pointRadii = group.regions.map(region => 
+                    selectedRegionNames.includes(region) ? 8 : 5
+                );
+                const pointBorderWidths = group.regions.map(region => 
+                    selectedRegionNames.includes(region) ? 3 : 0
+                );
+                
+                datasets.push({
+                    label: `Cluster ${parseInt(clusterId) + 1}`,
+                    data: group.points.map(p => ({ x: p[0], y: p[1] })),
+                    backgroundColor: clusterColors[idx % clusterColors.length],
+                    pointRadius: pointRadii,
+                    pointBorderWidth: pointBorderWidths,
+                    pointBorderColor: '#000',
+                    pointHoverRadius: 7,
+                    pointHoverBorderWidth: 2,
+                    regionNames: group.regions
+                });
+            });
+            
+            clusterChart.data.datasets = datasets;
+            clusterChart.update('none');
+            
+            // Update K display
+            const kDisplay = document.getElementById('k-display');
+            const kMode = document.getElementById('k-mode-select').value;
+            if (kMode === 'auto') {
+                kDisplay.textContent = `(K=${data.k_optimal} auto)`;
+            } else {
+                kDisplay.textContent = `(K=${data.k_optimal} manual)`;
+            }
+            
+            // Update map
+            updateMap(data);
+            
+            // Immediately update map styles to show cluster colors
+            updateMapStyles();
+            
+            // Store current dataset for brush selection
+            currentDataSet = data.regions.map((region, idx) => ({
+                name: region,
+                cluster: data.clusters[idx],
+                point: data.points[idx]
+            }));
+        }
+
+        function updateSelectionHighlight() {
+            if (!currentClustering) return;
+            
+            // Update point styles based on selection
+            clusterChart.data.datasets.forEach(dataset => {
+                const pointRadii = [];
+                const pointBorderWidths = [];
+                
+                dataset.regionNames.forEach(region => {
+                    const isSelected = selectedRegionNames.includes(region);
+                    pointRadii.push(isSelected ? 8 : 5);
+                    pointBorderWidths.push(isSelected ? 3 : 0);
+                });
+                
+                dataset.pointRadius = pointRadii;
+                dataset.pointBorderWidth = pointBorderWidths;
+            });
+            
+            clusterChart.update('none');
+            
+            // Update map styles
+            updateMapStyles();
+            
+            // Update linked views
+            updateLinkedViews();
+        }
+
+        function updateMap(data) {
+            if (!geoJsonLayer) return;
+            
+            console.log('Updating map with clustering data');
+            updateMapStyles();
+        }
+        
+        function updateMapStyles() {
+            if (!geoJsonLayer || !currentClustering) return;
+            
+            // Remove existing selection layers if any
+            if (window.selectionLayer) {
+                try { map.removeLayer(window.selectionLayer); } catch (e) {}
+                window.selectionLayer = null;
+            }
+            if (window.selectionLayerOuter) {
+                try { map.removeLayer(window.selectionLayerOuter); } catch (e) {}
+                window.selectionLayerOuter = null;
+            }
+            
+            // Create features for selected regions with black border
+            const selectedFeatures = [];
+            
+            geoJsonLayer.eachLayer(layer => {
+                const regionName = getRegionNameFromFeature(layer.feature);
+                const regionIdx = currentClustering.regions.indexOf(regionName);
+                
+                if (regionIdx >= 0) {
+                    const clusterId = currentClustering.clusters[regionIdx];
+                    const clusterColor = clusterColors[clusterId % clusterColors.length];
+                    
+                    // Default: use cluster color as fill
+                    let fillColor = clusterColor;
+                    let fillOpacity = 0.5;
+                    
+                    // If a variable is selected, color by variable value instead
+                    if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                        const value = getRegionVariableValue(regionName, selectedVariable);
+                        if (value !== null && globalScales[selectedVariable]) {
+                            const scale = globalScales[selectedVariable];
+                            const range = scale.max - scale.min;
+                            const normalized = range > 0 ? (value - scale.min) / range : 0.5;
+                            fillColor = getHeatmapColor(normalized);
+                            fillOpacity = 0.7;
+                        }
+                    }
+                    
+                    // Check if region is selected
+                    const isSelected = selectedRegionNames.includes(regionName);
+                    
+                    // Base style with cluster color border
+                    layer.setStyle({
+                        fillColor: fillColor,
+                        fillOpacity: fillOpacity,
+                        weight: 3,
+                        opacity: 1,
+                        color: clusterColor
+                    });
+                    
+                    // If selected, add to selection features for black inner border
+                    if (isSelected) {
+                        selectedFeatures.push(layer.feature);
+                    }
+                }
+            });
+            
+            // Create enhanced double border for selected regions (white + black)
+            if (selectedFeatures.length > 0) {
+                // Outer white border for contrast
+                window.selectionLayerOuter = L.geoJSON({
+                    type: 'FeatureCollection',
+                    features: selectedFeatures
+                }, {
+                    style: {
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        weight: 6,
+                        opacity: 1,
+                        color: '#ffffff',
+                        interactive: false
+                    },
+                    pane: 'overlayPane'
+                }).addTo(map);
+
+                // Inner black border
+                window.selectionLayer = L.geoJSON({
+                    type: 'FeatureCollection',
+                    features: selectedFeatures
+                }, {
+                    style: {
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        weight: 3,
+                        opacity: 1,
+                        color: '#000000',
+                        interactive: false
+                    },
+                    pane: 'overlayPane'
+                }).addTo(map);
+            }
+        }
+
+        function toggleTemporal() {
+            const isEnabled = document.getElementById('temporal-toggle').checked;
+            const controls = document.getElementById('temporal-controls');
+
+            // Clear trails when switching modes
+            bubbleTrails = {};
+            clickedBubbleRegions = [];
+
+            if (isEnabled) {
+                controls.classList.add('active');
+                loadClusteringData();
+            } else {
+                controls.classList.remove('active');
+                pauseAnimation();
+                loadClusteringData();
+            }
+        }
+
+        // Temporal animation functions
+        function setupTimeline() {
+            if (!timeseriesData || timeseriesData.length === 0) return;
+            
+            const slider = document.getElementById('timeline-slider');
+            slider.max = timeseriesData.length - 1;
+            slider.value = 0;
+            currentTimeIndex = 0;
+            
+            updateYearDisplay();
+        }
+
+        function interpolatePoints(data1, data2, t) {
+            // Interpolate only positions, keep original clusters
+            return {
+                regions: data1.regions,
+                clusters: data1.clusters, // Keep original cluster assignments
+                k_optimal: data1.k_optimal,
+                year: data1.year + (data2.year - data1.year) * t,
+                points: data1.points.map((point, idx) => {
+                    const point2 = data2.points[idx];
+                    return [
+                        point[0] + (point2[0] - point[0]) * t,
+                        point[1] + (point2[1] - point[1]) * t
+                    ];
+                }),
+                centroids: data1.centroids
+            };
+        }
+
+        function interpolateColors(data1, data2, points, t) {
+            // Interpolate between cluster assignments (color transition)
+            // For simplicity, just switch at t > 0.5
+            return {
+                regions: data1.regions,
+                clusters: t > 0.5 ? data2.clusters : data1.clusters,
+                k_optimal: data2.k_optimal,
+                year: data2.year,
+                points: points,
+                centroids: data2.centroids
+            };
+        }
+
+        // Start playback animation
+        function playAnimation() {
+            const isTemporalMode = true;  // Always in temporal mode
+            if (!isTemporalMode || !timeseriesData || isAnimationPlaying) return;
+            
+            // Clear trails when starting animation
+            bubbleTrails = {};
+            
+            isAnimationPlaying = true;
+            const baseSpeed = parseInt(document.getElementById('speed-select').value);
+            
+            // Animation phases timing
+            const movementDuration = baseSpeed * 0.4;  // 40% for movement
+            const colorDuration = baseSpeed * 0.2;      // 20% for color change
+            const pauseDuration = baseSpeed * 0.4;      // 40% for pause
+            
+            // Dynamic frame rate based on speed
+            const frameRate = baseSpeed < 1000 ? 30 : 50; // Faster frame rate for very fast speeds
+            
+            // Calculate number of steps based on duration and frame rate
+            const movementSteps = Math.max(10, Math.floor(movementDuration / frameRate));
+            const colorSteps = Math.max(5, Math.floor(colorDuration / frameRate));
+            const pauseSteps = Math.floor(pauseDuration / frameRate);
+            
+            let currentPhase = 'movement'; // 'movement', 'color', 'pause'
+            let stepCounter = 0;
+            let finalPoints = null;
+            
+            animationInterval = setInterval(() => {
+                const nextIndex = (currentTimeIndex + 1) % timeseriesData.length;
+                
+                if (currentPhase === 'movement') {
+                    const progress = Math.min(stepCounter / movementSteps, 1);
+                    // Smooth easing function
+                    const easedProgress = progress < 0.5 
+                        ? 2 * progress * progress 
+                        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                    
+                    const interpolatedData = interpolatePoints(
+                        timeseriesData[currentTimeIndex],
+                        timeseriesData[nextIndex],
+                        easedProgress
+                    );
+                    updateClusterChart(interpolatedData);
+                    
+                    // Update table during animation (but not too frequently)
+                    if (stepCounter % 5 === 0) {
+                        updateTopKTable();
+                    }
+                    
+                    if (progress >= 1) {
+                        finalPoints = interpolatedData.points;
+                        currentPhase = 'color';
+                        stepCounter = 0;
+                    } else {
+                        stepCounter++;
+                    }
+                    
+                } else if (currentPhase === 'color') {
+                    const progress = Math.min(stepCounter / colorSteps, 1);
+                    
+                    const colorData = interpolateColors(
+                        timeseriesData[currentTimeIndex],
+                        timeseriesData[nextIndex],
+                        finalPoints,
+                        progress
+                    );
+                    updateClusterChart(colorData);
+                    
+                    if (progress >= 1) {
+                        currentPhase = 'pause';
+                        stepCounter = 0;
+                        currentTimeIndex = nextIndex;
+                        document.getElementById('timeline-slider').value = currentTimeIndex;
+                        updateYearDisplay();
+                        // Load yearly data for the new year to update table
+                        loadYearlyData(timeseriesData[currentTimeIndex].year);
+                    } else {
+                        stepCounter++;
+                    }
+                    
+                } else if (currentPhase === 'pause') {
+                    // Just wait
+                    stepCounter++;
+                    
+                    if (stepCounter >= pauseSteps) {
+                        currentPhase = 'movement';
+                        stepCounter = 0;
+                    }
+                }
+                
+            }, frameRate);
+        }
+
+        function pauseAnimation() {
+            isAnimationPlaying = false;
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+            }
+        }
+
+        function resetAnimation() {
+            pauseAnimation();
+            currentTimeIndex = 0;
+            bubbleTrails = {}; // Clear trails
+            clickedBubbleRegions = []; // Clear clicked regions
+            if (timeseriesData && timeseriesData.length > 0) {
+                updateClusterChart(timeseriesData[0]);
+                document.getElementById('timeline-slider').value = 0;
+                updateYearDisplay();
+            }
+        }
+
+        function onTimelineChange() {
+            if (!timeseriesData) return;
+            
+            pauseAnimation();
+            currentTimeIndex = parseInt(document.getElementById('timeline-slider').value);
+            updateClusterChart(timeseriesData[currentTimeIndex]);
+            loadYearlyData(timeseriesData[currentTimeIndex].year);
+            updateYearDisplay();
+        }
+
+        function updateYearDisplay() {
+            if (!timeseriesData || currentTimeIndex >= timeseriesData.length) return;
+            document.getElementById('year-display').textContent = timeseriesData[currentTimeIndex].year;
+        }
+
+        function showLoading(show) {
+            const overlay = document.getElementById('cluster-loading');
+            if (show) {
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+        }
+
+        // Brush selection for cluster chart
+        const clusterCanvas = document.getElementById('clusterChart');
+        
+        clusterCanvas.addEventListener('mousedown', (e) => {
+            if (isAnimationPlaying) return; // Disable during animation
+            
+            const rect = clusterCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const chartArea = clusterChart.chartArea;
+            if (x >= chartArea.left && x <= chartArea.right && 
+                y >= chartArea.top && y <= chartArea.bottom) {
+                isDrawing = true;
+                brushStart = { x, y };
+                brushEnd = { x, y };
+                hasMoved = false;
+            }
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            
+            const rect = clusterCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            brushEnd = { x, y };
+            
+            // Check if moved beyond threshold (5 pixels)
+            const dx = Math.abs(x - brushStart.x);
+            const dy = Math.abs(y - brushStart.y);
+            if (dx > 5 || dy > 5) {
+                hasMoved = true;
+            }
+            
+            clusterChart.update();
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                
+                if (hasMoved) {
+                    // Drag selection - select all points in rectangle
+                    updateBrushSelection();
+                } else {
+                    // Single click - select nearest point
+                    selectSinglePoint();
+                }
+            }
+        });
+        
+        clusterCanvas.addEventListener('dblclick', () => {
+            brushStart = null;
+            brushEnd = null;
+            selectedRegionNames = [];
+            updateSelectionHighlight();
+            updateLinkedViews();
+        });
+
+        function selectSinglePoint() {
+            if (!brushStart || !currentClustering) return;
+            
+            const xScale = clusterChart.scales.x;
+            const yScale = clusterChart.scales.y;
+            
+            const clickX = xScale.getValueForPixel(brushStart.x);
+            const clickY = yScale.getValueForPixel(brushStart.y);
+            
+            // Find nearest point
+            let minDistance = Infinity;
+            let nearestIndex = -1;
+            
+            for (let i = 0; i < currentClustering.points.length; i++) {
+                const [px, py] = currentClustering.points[i];
+                const distance = Math.sqrt(Math.pow(px - clickX, 2) + Math.pow(py - clickY, 2));
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestIndex = i;
+                }
+            }
+            
+            // Select the nearest point if within reasonable distance
+            // (in data units, adjust threshold as needed)
+            if (nearestIndex >= 0 && minDistance < 0.5) {
+                const regionName = currentClustering.regions[nearestIndex];
+                
+                // Toggle point in/out of selection
+                const index = selectedRegionNames.indexOf(regionName);
+                if (index >= 0) {
+                    // Already selected, remove it
+                    selectedRegionNames.splice(index, 1);
+                    console.log('Deselected region (click):', regionName);
+                } else {
+                    // Not selected, add it
+                    selectedRegionNames.push(regionName);
+                    console.log('Selected region (click):', regionName);
+                }
+            } else {
+                // Click was too far from any point - do nothing
+                console.log('No point near click');
+            }
+            
+            // Clear brush rectangle
+            brushStart = null;
+            brushEnd = null;
+            
+            // Update visual highlighting (this calls updateLinkedViews internally)
+            updateSelectionHighlight();
+        }
+
+        function updateBrushSelection() {
+            if (!brushStart || !brushEnd || !currentClustering) return;
+            
+            const xScale = clusterChart.scales.x;
+            const yScale = clusterChart.scales.y;
+            
+            const x1 = Math.min(brushStart.x, brushEnd.x);
+            const x2 = Math.max(brushStart.x, brushEnd.x);
+            const y1 = Math.min(brushStart.y, brushEnd.y);
+            const y2 = Math.max(brushStart.y, brushEnd.y);
+            
+            const dataX1 = xScale.getValueForPixel(x1);
+            const dataX2 = xScale.getValueForPixel(x2);
+            const dataY1 = yScale.getValueForPixel(y2);
+            const dataY2 = yScale.getValueForPixel(y1);
+            
+            const brushedRegions = [];
+            for (let i = 0; i < currentClustering.points.length; i++) {
+                const [px, py] = currentClustering.points[i];
+                if (px >= dataX1 && px <= dataX2 && py >= dataY1 && py <= dataY2) {
+                    brushedRegions.push(currentClustering.regions[i]);
+                }
+            }
+            
+            // Toggle brushed regions in/out of selection
+            brushedRegions.forEach(region => {
+                const index = selectedRegionNames.indexOf(region);
+                if (index >= 0) {
+                    // Already selected, remove it
+                    selectedRegionNames.splice(index, 1);
+                } else {
+                    // Not selected, add it
+                    selectedRegionNames.push(region);
+                }
+            });
+            
+            console.log('Toggled regions (brush):', brushedRegions);
+            console.log('Current selection:', selectedRegionNames);
+            
+            // Clear brush rectangle
+            brushStart = null;
+            brushEnd = null;
+            
+            // Update visual highlighting
+            updateSelectionHighlight();
+        }
+
+        function updateTopKValue() {
+            const slider = document.getElementById('k-slider');
+            const display = document.getElementById('k-value-display');
+            
+            if (!slider || !display) {
+                console.error('K slider or display not found!');
+                return;
+            }
+            
+            topKValue = parseInt(slider.value);
+            display.textContent = topKValue;
+            
+            // Update slider gradient to show filled portion
+            const percentage = ((topKValue - parseInt(slider.min)) / (parseInt(slider.max) - parseInt(slider.min))) * 100;
+            slider.style.background = `linear-gradient(to right, #3498db 0%, #3498db ${percentage}%, #ddd ${percentage}%, #ddd 100%)`;
+            
+            console.log('K slider updated to:', topKValue);
+            
+            // Update all linked views to reflect new K value
+            updateLinkedViews();
+        }
+
+        // ============================================
+        // MANUAL MODE - RICOSTRUITO DA ZERO
+        // ============================================
+        
+        function toggleManualMode() {
+            const checkbox = document.getElementById('manual-mode-toggle');
+            const sliderContainer = document.getElementById('k-slider-container');
+            const manualList = document.getElementById('manual-variables-list');
+            
+            if (!checkbox || !sliderContainer || !manualList) {
+                console.error('❌ Manual mode elements not found!');
+                return;
+            }
+            
+            isManualTopKMode = checkbox.checked;
+            console.log('🔄 Manual mode:', isManualTopKMode);
+            
+            if (isManualTopKMode) {
+                // Switch to manual mode
+                sliderContainer.style.display = 'none';
+                manualList.classList.add('active');
+            } else {
+                // Switch to auto mode
+                sliderContainer.style.display = 'flex';
+                manualList.classList.remove('active');
+                manualSelectedVariables = [];
+            }
+            
+            // Rebuild table and PCP with new mode
+            updateLinkedViews();
+        }
+
+        function closeManualSelection() {
+            const manualList = document.getElementById('manual-variables-list');
+            if (manualList) {
+                manualList.style.display = 'none';
+                manualList.classList.remove('active');
+            }
+            console.log('✅ Manual selection menu closed');
+        }
+        
+        function populateManualVariableSelect(allVariables) {
+            if (!isManualTopKMode) return; // Only populate if in manual mode
+            
+            const listContainer = document.getElementById('manual-variables-list');
+            if (!listContainer) return;
+            
+            // Clear and repopulate with checkboxes
+            listContainer.innerHTML = '';
+            
+            // Add OK button header
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #3498db;';
+            
+            const title = document.createElement('span');
+            title.textContent = 'Select Variables:';
+            title.style.cssText = 'font-weight: bold; font-size: 0.8rem; color: #2c3e50;';
+            
+            const okButton = document.createElement('button');
+            okButton.textContent = '✓ OK';
+            okButton.className = 'btn-mini';
+            okButton.style.cssText = 'background: #27ae60; padding: 4px 12px;';
+            okButton.onclick = closeManualSelection;
+            
+            header.appendChild(title);
+            header.appendChild(okButton);
+            listContainer.appendChild(header);
+            
+            const sortedVars = [...allVariables].sort();
+            sortedVars.forEach(variable => {
+                const item = document.createElement('div');
+                item.className = 'variable-checkbox-item';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `var-${variable}`;
+                checkbox.value = variable;
+                checkbox.checked = manualSelectedVariables.includes(variable);
+                
+                const label = document.createElement('label');
+                label.htmlFor = `var-${variable}`;
+                label.textContent = indicatorNames[variable] || variable;
+                
+                // Add event listener to checkbox
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        if (!manualSelectedVariables.includes(variable)) {
+                            manualSelectedVariables.push(variable);
+                        }
+                    } else {
+                        const idx = manualSelectedVariables.indexOf(variable);
+                        if (idx > -1) {
+                            manualSelectedVariables.splice(idx, 1);
+                        }
+                    }
+                    console.log('✅ Manual selection updated:', manualSelectedVariables.length, 'variables');
+                    updateLinkedViews();
+                });
+                
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                listContainer.appendChild(item);
+            });
+            
+            console.log('📋 Populated manual list with', sortedVars.length, 'variables');
+        }
+
+        function updateManualSelection() {
+            // This function is now handled by individual checkbox listeners
+            // Kept for compatibility
+        }
+
+        function updateLinkedViews() {
+            console.log('=== updateLinkedViews called ===');
+            console.log('currentYearlyData:', currentYearlyData ? currentYearlyData.length : 'null');
+            console.log('currentClustering:', currentClustering ? 'exists' : 'null');
+            console.log('selectedRegionNames:', selectedRegionNames);
+            
+            if (!currentYearlyData || !currentClustering) {
+                console.log('Skipping update: missing data');
+                return;
+            }
+            
+            console.log('Updating TopK table...');
+            updateTopKTable();
+            
+            console.log('Rendering PCP...');
+            renderPCP();
+            
+            console.log('Updating bubble chart...');
+            updateBubbleChart();
+            
+            console.log('All views updated!');
+        }
+
+        // ============================================
+        // PCP RENDERING - IMPROVED VERSION (NO ZOOM/PAN)
+        // ============================================
+        
+        function renderPCP() {
+            console.log('renderPCP called');
+            const svg = document.getElementById('pcpSvg');
+            if (!svg) {
+                console.error('PCP SVG element not found');
+                return;
+            }
+            
+            if (!currentYearlyData || !currentClustering || orderedPCPVariables.length === 0) {
+                console.log('Missing data for PCP');
+                svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#999" font-size="12">Select regions to analyze cluster profiles</text>';
+                return;
+            }
+            
+            console.log('Rendering PCP with', orderedPCPVariables.length, 'axes for', currentClustering.k_optimal, 'clusters and', selectedRegionNames.length, 'selected regions');
+            
+            const width = svg.clientWidth || 800;
+            const containerHeight = svg.parentElement.clientHeight || 300;
+            
+            // Calculate total items on Y axis
+            const uniqueClustersCount = [...new Set(currentClustering.clusters)].length;
+            const totalItems = uniqueClustersCount + selectedRegionNames.length;
+            
+            // If more than 5 items, expand the graph height
+            let extraHeight = 0;
+            if (totalItems > 5) {
+                extraHeight = (totalItems - 5) * 16; // 16px per extra item
+            }
+            
+            // SVG height expands with content
+            const height = containerHeight + extraHeight;
+            svg.style.height = height + 'px';
+            svg.style.paddingBottom = '0px';
+            
+            // Dynamic padding based on number of variables - REDUCED
+            const numVars = orderedPCPVariables.length;
+            const topPadding = numVars > 6 ? 50 : (numVars > 4 ? 45 : 40); // Further reduced padding
+            const rightPadding = 30; // Minimal right padding
+            const leftPadding = 110;
+            const bottomPadding = 10;
+            
+            const padding = { top: topPadding, right: rightPadding, bottom: bottomPadding, left: leftPadding };
+            const plotHeight = height - padding.top - padding.bottom;
+            
+            // Get unique clusters
+            const uniqueClusters = [...new Set(currentClustering.clusters)].sort((a, b) => a - b);
+            
+            // Determine which clusters contain selected regions
+            const selectedClusters = new Set();
+            selectedRegionNames.forEach(region => {
+                const regionIdx = currentClustering.regions.indexOf(region);
+                if (regionIdx >= 0) {
+                    selectedClusters.add(currentClustering.clusters[regionIdx]);
+                }
+            });
+            
+            // Calculate cluster medians for each variable
+            const clusterData = {}; // clusterId -> { variable -> median }
+            uniqueClusters.forEach(clusterId => {
+                clusterData[clusterId] = {};
+            });
+            
+            orderedPCPVariables.forEach(varObj => {
+                const variable = varObj.variable;
+                const data = varObj.data;
+                
+                uniqueClusters.forEach(clusterId => {
+                    // Get values for all regions in this cluster
+                    const clusterValues = [];
+                    currentClustering.regions.forEach((region, idx) => {
+                        if (currentClustering.clusters[idx] === clusterId && data[region] != null) {
+                            clusterValues.push(data[region]);
+                        }
+                    });
+                    
+                    // Calculate median
+                    if (clusterValues.length > 0) {
+                        clusterValues.sort((a, b) => a - b);
+                        const mid = Math.floor(clusterValues.length / 2);
+                        clusterData[clusterId][variable] = clusterValues.length % 2 === 0
+                            ? (clusterValues[mid - 1] + clusterValues[mid]) / 2
+                            : clusterValues[mid];
+                    }
+                });
+            });
+            
+            // Extract data for selected regions
+            const regionData = {};
+            selectedRegionNames.forEach(region => {
+                regionData[region] = {};
+            });
+            
+            orderedPCPVariables.forEach(varObj => {
+                const variable = varObj.variable;
+                const data = varObj.data;
+                
+                selectedRegionNames.forEach(region => {
+                    if (data[region] != null) {
+                        regionData[region][variable] = data[region];
+                    }
+                });
+            });
+            
+            console.log('Cluster data calculated:', clusterData);
+            console.log('Region data extracted for', selectedRegionNames.length, 'regions');
+            
+            // Calculate scales for each variable (global across clusters and selected regions)
+            const scales = {};
+            orderedPCPVariables.forEach(varObj => {
+                const variable = varObj.variable;
+                const values = [];
+                
+                // Include cluster medians
+                uniqueClusters.forEach(clusterId => {
+                    if (clusterData[clusterId][variable] != null) {
+                        values.push(clusterData[clusterId][variable]);
+                    }
+                });
+                
+                // Include selected region values
+                selectedRegionNames.forEach(region => {
+                    if (regionData[region][variable] != null) {
+                        values.push(regionData[region][variable]);
+                    }
+                });
+                
+                if (values.length > 0) {
+                    const min = Math.min(...values);
+                    const max = Math.max(...values);
+                    scales[variable] = { min, max };
+                } else {
+                    scales[variable] = { min: 0, max: 1 };
+                }
+            });
+            
+            const axisSpacing = (width - padding.left - padding.right) / (orderedPCPVariables.length - 1);
+            
+            // Build SVG
+            let svgContent = '';
+            
+            // Draw axes and labels
+            orderedPCPVariables.forEach((varObj, i) => {
+                const variable = varObj.variable;
+                const x = padding.left + i * axisSpacing;
+                
+                // Axis line
+                svgContent += `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${height - padding.bottom}" class="pcp-axis" />`;
+                
+                // Rotated label - IMPROVED SIZING
+                const labelText = indicatorNames[variable] || variable;
+                // Truncate label if too long for display
+                const maxLabelLength = numVars > 8 ? 12 : (numVars > 6 ? 15 : 20);
+                const displayLabel = labelText.length > maxLabelLength ? labelText.substring(0, maxLabelLength) + '...' : labelText;
+                // Add full text as data attribute for tooltip
+                svgContent += `<text x="${x}" y="${padding.top - 5}" class="pcp-axis-label-rotated" transform="rotate(-45, ${x}, ${padding.top - 5})" data-fulltext="${labelText}">${displayLabel}</text>`;
+            });
+            
+            // Collect all items with their first variable values for sorting and collision detection
+            const allItems = [];
+            const firstVarObj = orderedPCPVariables[0];
+            const firstScale = scales[firstVarObj.variable];
+            
+            uniqueClusters.forEach(clusterId => {
+                const data = clusterData[clusterId];
+                const firstValue = data[firstVarObj.variable];
+                if (firstValue != null) {
+                    const firstNormalized = firstScale.max === firstScale.min ? 0.5 : (firstValue - firstScale.min) / (firstScale.max - firstScale.min);
+                    const idealY = padding.top + plotHeight * (1 - firstNormalized);
+                    allItems.push({
+                        type: 'cluster',
+                        id: clusterId,
+                        data: data,
+                        idealY: idealY,
+                        actualY: idealY
+                    });
+                }
+            });
+            
+            selectedRegionNames.forEach(region => {
+                const data = regionData[region];
+                const firstValue = data[firstVarObj.variable];
+                if (firstValue != null) {
+                    const firstNormalized = firstScale.max === firstScale.min ? 0.5 : (firstValue - firstScale.min) / (firstScale.max - firstScale.min);
+                    const idealY = padding.top + plotHeight * (1 - firstNormalized);
+                    allItems.push({
+                        type: 'region',
+                        name: region,
+                        data: data,
+                        idealY: idealY,
+                        actualY: idealY
+                    });
+                }
+            });
+            
+            // Sort by ideal Y position (top to bottom)
+            allItems.sort((a, b) => a.idealY - b.idealY);
+            
+            // Resolve overlaps: minimum spacing of 14px between labels
+            const minSpacing = 14;
+            for (let i = 1; i < allItems.length; i++) {
+                if (allItems[i].actualY - allItems[i-1].actualY < minSpacing) {
+                    allItems[i].actualY = allItems[i-1].actualY + minSpacing;
+                }
+            }
+            
+            // Draw cluster lines first (background)
+            allItems.forEach(item => {
+                if (item.type !== 'cluster') return;
+                
+                const clusterId = item.id;
+                const data = item.data;
+                const startY = item.actualY;
+                const color = clusterColors[clusterId % clusterColors.length];
+                const isSelected = selectedClusters.has(clusterId);
+                const strokeWidth = isSelected ? 3.2 : 1.8;
+                const opacity = isSelected ? 0.75 : 0.45;
+                
+                // Draw label on the left (inside SVG)
+                const clusterLabel = `C${clusterId + 1}`;
+                const clusterFullName = `Cluster ${clusterId + 1}`;
+                const truncatedClusterLabel = clusterLabel.length > 6 ? clusterLabel.substring(0, 6) + '...' : clusterLabel;
+                svgContent += `<text x="5" y="${startY + 4}" text-anchor="start" fill="${color}" font-size="9px" font-weight="normal" opacity="0.7" data-fulltext="${clusterFullName}">${truncatedClusterLabel}</text>`;
+                
+                // Build path starting after label
+                let pathData = `M ${40} ${startY}`;
+                
+                orderedPCPVariables.forEach((varObj, i) => {
+                    const variable = varObj.variable;
+                    const value = data[variable];
+                    
+                    if (value == null) return;
+                    
+                    const scale = scales[variable];
+                    const x = padding.left + i * axisSpacing;
+                    const normalized = scale.max === scale.min ? 0.5 : (value - scale.min) / (scale.max - scale.min);
+                    // Clamp normalized value between 0 and 1 to keep lines inside bounds
+                    const clampedNormalized = Math.max(0, Math.min(1, normalized));
+                    const y = padding.top + plotHeight * (1 - clampedNormalized);
+                    
+                    pathData += ` L ${x} ${y}`;
+                });
+                
+                if (pathData) {
+                    svgContent += `<path d="${pathData}" class="pcp-path" stroke="${color}" stroke-width="${strokeWidth}" opacity="${opacity}" fill="none" />`;
+                }
+            });
+            
+            // Draw selected region lines on top (foreground) with thicker lines
+            allItems.forEach(item => {
+                if (item.type !== 'region') return;
+                
+                const region = item.name;
+                const data = item.data;
+                const startY = item.actualY;
+                
+                // Get region's cluster color
+                const regionIdx = currentClustering.regions.indexOf(region);
+                const clusterId = regionIdx >= 0 ? currentClustering.clusters[regionIdx] : 0;
+                const color = clusterColors[clusterId % clusterColors.length];
+                
+                // Draw label on the left (inside SVG)
+                const truncatedRegion = region.length > 6 ? region.substring(0, 6) + '...' : region;
+                svgContent += `<text x="5" y="${startY + 4}" text-anchor="start" fill="${color}" font-size="10px" font-weight="bold" data-fulltext="${region}">${truncatedRegion}</text>`;
+                
+                // Build path starting after label
+                let pathData = `M ${40} ${startY}`;
+                
+                orderedPCPVariables.forEach((varObj, i) => {
+                    const variable = varObj.variable;
+                    const value = data[variable];
+                    
+                    if (value == null) return;
+                    
+                    const scale = scales[variable];
+                    const x = padding.left + i * axisSpacing;
+                    const normalized = scale.max === scale.min ? 0.5 : (value - scale.min) / (scale.max - scale.min);
+                    // Clamp normalized value between 0 and 1 to keep lines inside bounds
+                    const clampedNormalized = Math.max(0, Math.min(1, normalized));
+                    const y = padding.top + plotHeight * (1 - clampedNormalized);
+                    
+                    pathData += ` L ${x} ${y}`;
+                });
+                
+                if (pathData) {
+                    svgContent += `<path d="${pathData}" class="pcp-path" stroke="${color}" stroke-width="4.2" opacity="0.98" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+                }
+            });
+            
+            svg.innerHTML = svgContent;
+            
+            // Add interactive tooltips to PCP
+            addPCPInteractiveTooltips();
+            
+            console.log('PCP updated with', uniqueClusters.length, 'clusters and', selectedRegionNames.length, 'selected regions');
+        }
+
+        function addPCPInteractiveTooltips() {
+            const svg = document.getElementById('pcpSvg');
+            if (!svg) return;
+            
+            // Add tooltips ONLY to text elements (axes, labels, cluster/region names)
+            // NO tooltips or hover effects for path lines
+            const textElements = svg.querySelectorAll('text');
+            textElements.forEach(textEl => {
+                const fullText = textEl.getAttribute('data-fulltext');
+                if (fullText) {
+                    // Use full text for tooltip
+                    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                    title.textContent = fullText;
+                    textEl.appendChild(title);
+                } else {
+                    // Fallback to displayed text
+                    const textContent = textEl.textContent;
+                    if (textContent && textContent.trim().length > 0) {
+                        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                        title.textContent = textContent;
+                        textEl.appendChild(title);
+                    }
+                }
+            });
+            
+            // NO hover effects or tooltips for PCP paths/lines as requested
+            console.log('PCP tooltips added to text elements only (no line highlighting)');
+        }
+
+        function addPCPTooltips() {
+            // Legacy function - replaced by addPCPInteractiveTooltips
+            const svg = document.getElementById('pcp-svg');
+            if (!svg) return;
+            
+            // Get all text elements in the SVG
+            const textElements = svg.querySelectorAll('text');
+            
+            textElements.forEach(textEl => {
+                const textContent = textEl.textContent;
+                if (textContent && textContent.trim().length > 0) {
+                    // Check if this is a variable label (not a numeric value)
+                    if (isNaN(parseFloat(textContent))) {
+                        // Create a title element for tooltip
+                        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                        title.textContent = textContent;
+                        textEl.appendChild(title);
+                    }
+                }
+            });
+        }
+
+        // Note: onBubbleVariableChange() and updateBubbleChart() are already defined above
+
+        function updateTopKTable() {
+            console.log('=== updateTopKTable called ===');
+            console.log('selectedRegionNames:', selectedRegionNames);
+            console.log('currentYearlyData exists:', !!currentYearlyData);
+            console.log('currentClustering exists:', !!currentClustering);
+            
+            const tableHead = document.getElementById('tableHead');
+            const tableBody = document.getElementById('tableBody');
+            
+            if (!currentYearlyData || !currentClustering) {
+                tableHead.innerHTML = '<tr><th>Select regions to view analysis</th></tr>';
+                tableBody.innerHTML = '';
+                orderedPCPVariables = []; // Clear variables for PCP
+                return;
+            }
+            
+            // Get all unique clusters
+            const uniqueClusters = [...new Set(currentClustering.clusters)].sort((a, b) => a - b);
+            
+            // Get all unique data_types (variables)
+            const allVariables = [...new Set(currentYearlyData.map(row => row.data_type))];
+            
+            // Populate manual select dropdown if needed
+            populateManualVariableSelect(allVariables);
+            
+            // Update slider max value based on number of variables
+            const slider = document.getElementById('k-slider');
+            if (slider) {
+                slider.max = allVariables.length;
+                // Adjust current value if it exceeds max
+                if (topKValue > allVariables.length) {
+                    topKValue = allVariables.length;
+                    slider.value = topKValue;
+                    document.getElementById('k-value-display').textContent = topKValue;
+                    // Update gradient
+                    const percentage = ((topKValue - parseInt(slider.min)) / (parseInt(slider.max) - parseInt(slider.min))) * 100;
+                    slider.style.background = `linear-gradient(to right, #3498db 0%, #3498db ${percentage}%, #ddd ${percentage}%, #ddd 100%)`;
+                }
+            }
+            
+            // Prepare data structure: variable -> region -> value
+            const variableData = {};
+            allVariables.forEach(variable => {
+                variableData[variable] = {};
+                currentClustering.regions.forEach(region => {
+                    variableData[variable][region] = null;
+                });
+            });
+            
+            // Fill data from currentYearlyData
+            currentYearlyData.forEach(row => {
+                if (variableData[row.data_type] && variableData[row.data_type][row.region] !== undefined) {
+                    variableData[row.data_type][row.region] = row.value;
+                }
+            });
+            
+            // Calculate gap normalized for each variable
+            const variableGaps = [];
+            
+            allVariables.forEach(variable => {
+                const selectedValues = [];
+                const nonSelectedValues = [];
+                
+                currentClustering.regions.forEach(region => {
+                    const value = variableData[variable][region];
+                    if (value !== null && value !== undefined) {
+                        if (selectedRegionNames.includes(region)) {
+                            selectedValues.push(value);
+                        } else {
+                            nonSelectedValues.push(value);
+                        }
+                    }
+                });
+                
+                // If regions are selected, calculate gap between selected and non-selected
+                if (selectedValues.length > 0 && nonSelectedValues.length > 0) {
+                    // Calculate means
+                    const meanSelected = selectedValues.reduce((a, b) => a + b, 0) / selectedValues.length;
+                    const meanNonSelected = nonSelectedValues.reduce((a, b) => a + b, 0) / nonSelectedValues.length;
+                    
+                    // Calculate standard deviation of all values
+                    const allValues = [...selectedValues, ...nonSelectedValues];
+                    const meanAll = allValues.reduce((a, b) => a + b, 0) / allValues.length;
+                    const variance = allValues.reduce((sum, val) => sum + Math.pow(val - meanAll, 2), 0) / allValues.length;
+                    const stdDev = Math.sqrt(variance);
+                    
+                    // Normalized gap
+                    const gap = stdDev > 0 ? Math.abs(meanSelected - meanNonSelected) / stdDev : 0;
+                    
+                    variableGaps.push({
+                        variable: variable,
+                        gap: gap,
+                        data: variableData[variable]
+                    });
+                } else if (selectedValues.length === 0 && nonSelectedValues.length > 0) {
+                    // No selection yet - use coefficient of variation as diversity metric
+                    const mean = nonSelectedValues.reduce((a, b) => a + b, 0) / nonSelectedValues.length;
+                    const variance = nonSelectedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / nonSelectedValues.length;
+                    const stdDev = Math.sqrt(variance);
+                    const coefficientOfVariation = mean !== 0 ? stdDev / Math.abs(mean) : stdDev;
+                    
+                    variableGaps.push({
+                        variable: variable,
+                        gap: coefficientOfVariation,
+                        data: variableData[variable]
+                    });
+                }
+            });
+            
+            // Sort by gap descending and take top K
+            variableGaps.sort((a, b) => b.gap - a.gap);
+            
+            let topKVariables;
+            if (isManualTopKMode && manualSelectedVariables.length > 0) {
+                // Use manually selected variables
+                topKVariables = variableGaps.filter(v => manualSelectedVariables.includes(v.variable));
+            } else {
+                // Use automatic top K selection
+                topKVariables = variableGaps.slice(0, topKValue);
+            }
+            
+            // Store ordered variables globally for PCP synchronization
+            orderedPCPVariables = topKVariables.map(v => ({
+                variable: v.variable,
+                data: v.data
+            }));
+            
+            if (topKVariables.length === 0) {
+                tableHead.innerHTML = '<tr><th>No data available</th></tr>';
+                tableBody.innerHTML = '';
+                return;
+            }
+            
+            // TRANSPOSED TABLE: Variables in columns, Clusters+Regions in rows
+            // Build table header: Cluster/Region | Variable1 | Variable2 | ... | VariableK
+            let headerHTML = '<tr><th class="col-selected-regions">Cluster / Region</th>';
+            
+            topKVariables.forEach(varObj => {
+                const displayName = indicatorNames[varObj.variable] || varObj.variable;
+                headerHTML += `<th>${displayName}</th>`;
+            });
+            
+            headerHTML += '</tr>';
+            tableHead.innerHTML = headerHTML;
+            
+            // Pre-calculate all values for each variable to determine min/max for color normalization
+            const variableStats = {};
+            topKVariables.forEach(varObj => {
+                const variable = varObj.variable;
+                const data = varObj.data;
+                const allValues = [];
+                
+                // Collect all values for this variable (selected regions + cluster medians)
+                selectedRegionNames.forEach(region => {
+                    const val = data[region];
+                    if (val !== null && val !== undefined) allValues.push(val);
+                });
+                
+                // Also collect cluster median values
+                uniqueClusters.forEach(clusterId => {
+                    const clusterRegionsNonSelected = currentClustering.regions.filter((region, idx) => 
+                        currentClustering.clusters[idx] === clusterId && !selectedRegionNames.includes(region)
+                    );
+                    
+                    let clusterValues = clusterRegionsNonSelected
+                        .map(region => data[region])
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (clusterValues.length === 0) {
+                        const allClusterRegions = currentClustering.regions.filter((region, idx) => 
+                            currentClustering.clusters[idx] === clusterId
+                        );
+                        clusterValues = allClusterRegions
+                            .map(region => data[region])
+                            .filter(v => v !== null && v !== undefined);
+                    }
+                    
+                    if (clusterValues.length > 0) {
+                        clusterValues.sort((a, b) => a - b);
+                        const mid = Math.floor(clusterValues.length / 2);
+                        const median = clusterValues.length % 2 === 0
+                            ? (clusterValues[mid - 1] + clusterValues[mid]) / 2
+                            : clusterValues[mid];
+                        allValues.push(median);
+                    }
+                });
+                
+                variableStats[variable] = {
+                    min: Math.min(...allValues),
+                    max: Math.max(...allValues),
+                    range: Math.max(...allValues) - Math.min(...allValues)
+                };
+            });
+            
+            // Build table body: one row per selected region first, then one row per cluster median
+            let bodyHTML = '';
+            
+            // First, add selected region rows
+            selectedRegionNames.forEach(region => {
+                bodyHTML += '<tr>';
+                bodyHTML += `<td class="col-selected-regions" style="text-align: left; font-weight: bold;">${region}</td>`;
+                
+                topKVariables.forEach(varObj => {
+                    const variable = varObj.variable;
+                    const data = varObj.data;
+                    const stats = variableStats[variable];
+                    const value = data[region];
+                    
+                    if (value !== null && value !== undefined) {
+                        // Normalize using variable's column statistics
+                        const normalized = stats.range > 0 ? (value - stats.min) / stats.range : 0.5;
+                        const color = getHeatmapColor(normalized);
+                        bodyHTML += `<td style="background-color: ${color};">${value.toFixed(2)}</td>`;
+                    } else {
+                        bodyHTML += `<td style="background-color: #f0f0f0;">-</td>`;
+                    }
+                });
+                
+                bodyHTML += '</tr>';
+            });
+            
+            // Then, add cluster median rows
+            uniqueClusters.forEach(clusterId => {
+                bodyHTML += '<tr>';
+                bodyHTML += `<td class="col-selected-regions" style="text-align: left;">Cluster ${clusterId + 1}</td>`;
+                
+                topKVariables.forEach(varObj => {
+                    const variable = varObj.variable;
+                    const data = varObj.data;
+                    const stats = variableStats[variable];
+                    
+                    // Calculate cluster median
+                    const clusterRegionsNonSelected = currentClustering.regions.filter((region, idx) => 
+                        currentClustering.clusters[idx] === clusterId && !selectedRegionNames.includes(region)
+                    );
+                    
+                    let clusterValues = clusterRegionsNonSelected
+                        .map(region => data[region])
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (clusterValues.length === 0) {
+                        const allClusterRegions = currentClustering.regions.filter((region, idx) => 
+                            currentClustering.clusters[idx] === clusterId
+                        );
+                        clusterValues = allClusterRegions
+                            .map(region => data[region])
+                            .filter(v => v !== null && v !== undefined);
+                    }
+                    
+                    if (clusterValues.length > 0) {
+                        clusterValues.sort((a, b) => a - b);
+                        const mid = Math.floor(clusterValues.length / 2);
+                        const median = clusterValues.length % 2 === 0
+                            ? (clusterValues[mid - 1] + clusterValues[mid]) / 2
+                            : clusterValues[mid];
+                        
+                        // Normalize using variable's column statistics
+                        const normalized = stats.range > 0 ? (median - stats.min) / stats.range : 0.5;
+                        const color = getHeatmapColor(normalized);
+                        bodyHTML += `<td style="background-color: ${color};">${median.toFixed(2)}</td>`;
+                    } else {
+                        bodyHTML += `<td style="background-color: #f0f0f0;">-</td>`;
+                    }
+                });
+                
+                bodyHTML += '</tr>';
+            });
+            
+            tableBody.innerHTML = bodyHTML;
+        }
+        
+        function getHeatmapColor(normalized) {
+            // Color scale with 9 distinct orange colors from light to dark
+            const colors = [
+                '#fff5eb',
+                '#fee6ce',
+                '#fdd0a2',
+                '#fdae6b',
+                '#fd8d3c',
+                '#f16913',
+                '#d94801',
+                '#a63603',
+                '#7f2704'
+            ];
+            
+            // Map normalized (0-1) to one of the 9 colors
+            const index = Math.min(Math.floor(normalized * colors.length), colors.length - 1);
+            return colors[index];
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            map.invalidateSize();
+        });
+        
+        // Load Italy regions GeoJSON
+        async function loadRegionsGeoJSON() {
+            try {
+                // Using public GeoJSON for Italian regions
+                const response = await fetch('https://raw.githubusercontent.com/openpolis/geojson-italy/master/geojson/limits_IT_regions.geojson');
+                regionGeoJson = await response.json();
+                console.log('GeoJSON loaded:', regionGeoJson.features.length, 'regions');
+                
+                // Initialize GeoJSON layer WITHOUT default style to avoid gray borders
+                // Styles will be applied by updateMapStyles() after clustering data loads
+                geoJsonLayer = L.geoJSON(regionGeoJson, {
+                    onEachFeature: onEachFeature,
+                    renderer: L.canvas(),
+                    style: function() {
+                        // Temporary invisible style until clustering data loads
+                        return {
+                            fillColor: 'transparent',
+                            fillOpacity: 0,
+                            weight: 0,
+                            opacity: 0
+                        };
+                    }
+                }).addTo(map);
+                
+            } catch (error) {
+                console.error('Error loading GeoJSON:', error);
+                alert('Failed to load map regions. Using fallback markers.');
+            }
+        }
+        
+        function defaultStyle(feature) {
+            return {
+                fillColor: 'transparent',
+                weight: 2,
+                opacity: 1,
+                color: '#999',
+                fillOpacity: 0.7
+            };
+        }
+        
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight,
+                click: selectRegionFromMap
+            });
+        }
+        
+        function highlightFeature(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            if (!selectedRegionNames.includes(regionName)) {
+                layer.setStyle({
+                    weight: 4,
+                    opacity: 1
+                });
+            }
+            
+            // Show tooltip
+            const props = layer.feature.properties;
+            const name = getRegionNameFromFeature(layer.feature);
+            let tooltipContent = `<b>${name}</b>`;
+            
+            if (currentClustering) {
+                const regionIdx = currentClustering.regions.indexOf(name);
+                if (regionIdx >= 0) {
+                    const clusterId = currentClustering.clusters[regionIdx];
+                    tooltipContent += `<br>Cluster: ${clusterId + 1}`;
+                }
+            }
+            
+            if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                const value = getRegionVariableValue(name, selectedVariable);
+                if (value !== null) {
+                    const displayName = indicatorNames[selectedVariable] || selectedVariable;
+                    tooltipContent += `<br>${displayName}: ${value.toFixed(2)}`;
+                }
+            }
+            
+            layer.bindTooltip(tooltipContent).openTooltip();
+        }
+        
+        function resetHighlight(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            // Don't use resetStyle - it causes gray color
+            // Instead, reapply correct styles
+            if (!selectedRegionNames.includes(regionName)) {
+                // Find the region in clustering data and reapply its style
+                if (currentClustering) {
+                    const regionIdx = currentClustering.regions.indexOf(regionName);
+                    if (regionIdx >= 0) {
+                        const clusterId = currentClustering.clusters[regionIdx];
+                        const clusterColor = clusterColors[clusterId % clusterColors.length];
+                        
+                        // Default: use cluster color as fill
+                        let fillColor = clusterColor;
+                        let fillOpacity = 0.5;
+                        
+                        // If a variable is selected, override with variable color
+                        if (selectedVariable && selectedVariable !== 'none' && currentYearlyData) {
+                            const value = getRegionVariableValue(regionName, selectedVariable);
+                            if (value !== null && globalScales[selectedVariable]) {
+                                const scale = globalScales[selectedVariable];
+                                const range = scale.max - scale.min;
+                                const normalized = range > 0 ? (value - scale.min) / range : 0.5;
+                                fillColor = getHeatmapColor(normalized);
+                                fillOpacity = 0.7;
+                            }
+                        }
+                        
+                        layer.setStyle({
+                            fillColor: fillColor,
+                            fillOpacity: fillOpacity,
+                            weight: 3,
+                            opacity: 1,
+                            color: clusterColor
+                        });
+                    }
+                }
+            }
+            
+            layer.closeTooltip();
+        }
+        
+        function selectRegionFromMap(e) {
+            const layer = e.target;
+            const regionName = getRegionNameFromFeature(layer.feature);
+            
+            // Toggle selection
+            const index = selectedRegionNames.indexOf(regionName);
+            if (index >= 0) {
+                selectedRegionNames.splice(index, 1);
+            } else {
+                selectedRegionNames.push(regionName);
+            }
+            
+            console.log('Selected from map:', regionName);
+            
+            // Update both visualizations
+            updateMapStyles();
+            updateSelectionHighlight();
+        }
+        
+        function getRegionNameFromFeature(feature) {
+            // GeoJSON properties may vary, try common field names
+            const props = feature.properties;
+            return props.reg_name || props.name || props.NOME_REG || props.NAME_1 || '';
+        }
+        
+        function getRegionVariableValue(regionName, variable) {
+            if (!currentYearlyData) return null;
+            
+            const row = currentYearlyData.find(r => r.region === regionName && r.data_type === variable);
+            return row ? row.value : null;
+        }
+        
+        // Calculate global scales for all variables (0 to max across all years)
+        // This is used only in non-temporal mode, in temporal mode we preload all years
+        async function calculateGlobalScales() {
+            try {
+                console.log('Computing global scales from current data (non-temporal mode)...');
+                
+                if (!currentYearlyData) return;
+                
+                const variables = [...new Set(currentYearlyData.map(row => row.data_type))];
+                
+                // For each variable, set min to 0 and use current max
+                variables.forEach(variable => {
+                    const values = currentYearlyData
+                        .filter(row => row.data_type === variable)
+                        .map(row => row.value)
+                        .filter(v => v !== null && v !== undefined);
+                    
+                    if (values.length > 0) {
+                        const currentMax = Math.max(...values);
+                        
+                        globalScales[variable] = {
+                            min: 0,
+                            max: currentMax
+                        };
+                    }
+                });
+                
+                globalScalesCalculated = true;
+                console.log('Global scales computed for', Object.keys(globalScales).length, 'variables (min=0, max=current)');
+            } catch (error) {
+                console.error('Error computing global scales:', error);
+            }
+        }
+        
+        function updateMapVariable() {
+            selectedVariable = document.getElementById('map-variable-select').value;
+            console.log('Map variable changed to:', selectedVariable);
+            updateMapStyles();
+        }
+        
+        function populateVariableDropdown() {
+            if (!currentYearlyData) return;
+            
+            const select = document.getElementById('map-variable-select');
+            const variables = [...new Set(currentYearlyData.map(row => row.data_type))].sort();
+            
+            // Keep "None" option and add all variables
+            const currentValue = select.value;
+            select.innerHTML = '<option value="none">None</option>';
+            
+            variables.forEach(variable => {
+                const displayName = indicatorNames[variable] || variable;
+                const option = document.createElement('option');
+                option.value = variable;
+                option.textContent = displayName;
+                select.appendChild(option);
+            });
+            
+            // Restore previous selection if still valid
+            if (currentValue && currentValue !== 'none' && variables.includes(currentValue)) {
+                select.value = currentValue;
+            }
+            
+            // Also populate bubble chart dropdowns
+            populateBubbleDropdowns(variables);
+        }
+        
+        function populateBubbleDropdowns(variables) {
+            console.log('populateBubbleDropdowns called with', variables.length, 'variables');
+            const xSelect = document.getElementById('bubble-x-select');
+            const ySelect = document.getElementById('bubble-y-select');
+            const sizeSelect = document.getElementById('bubble-size-select');
+            
+            console.log('Dropdown elements:', { xSelect: !!xSelect, ySelect: !!ySelect, sizeSelect: !!sizeSelect });
+            
+            if (!xSelect || !ySelect || !sizeSelect) {
+                console.error('Dropdown elements not found!');
+                return;
+            }
+            
+            // Store current values
+            const currentX = xSelect.value || bubbleXVar;
+            const currentY = ySelect.value || bubbleYVar;
+            const currentSize = sizeSelect.value || bubbleSizeVar;
+            
+            // Populate all three dropdowns
+            [xSelect, ySelect, sizeSelect].forEach(select => {
+                select.innerHTML = '';
+                variables.forEach(variable => {
+                    const displayName = indicatorNames[variable] || variable;
+                    const option = document.createElement('option');
+                    option.value = variable;
+                    option.textContent = displayName;
+                    select.appendChild(option);
+                });
+            });
+            
+            // Set default or restore previous values
+            xSelect.value = variables.includes(currentX) ? currentX : (variables.includes('BIRTHRATE') ? 'BIRTHRATE' : variables[0]);
+            ySelect.value = variables.includes(currentY) ? currentY : (variables.includes('LIFEEXP0T') ? 'LIFEEXP0T' : variables[0]);
+            sizeSelect.value = variables.includes(currentSize) ? currentSize : (variables.includes('DEATHRATE') ? 'DEATHRATE' : variables[0]);
+            
+            // Update state variables
+            bubbleXVar = xSelect.value;
+            bubbleYVar = ySelect.value;
+            bubbleSizeVar = sizeSelect.value;
+        }
+        
+        // Initial load - IMPORTANT: Load GeoJSON FIRST, then clustering data
+        // This ensures the map regions exist before we try to color them
+        async function initializeDashboard() {
+            console.log('Initializing dashboard...');
+            await loadRegionsGeoJSON();
+            console.log('GeoJSON loaded, now loading clustering data...');
+            await loadClusteringData();
+            console.log('Dashboard initialized!');
+            
+            // Setup manual mode event listeners
+            setupManualModeListeners();
+        }
+        
+        function setupManualModeListeners() {
+            // Checkbox toggle
+            const checkbox = document.getElementById('manual-mode-toggle');
+            if (checkbox) {
+                checkbox.addEventListener('change', toggleManualMode);
+                console.log('✅ Manual checkbox listener attached');
+            }
+        }
+        
+        initializeDashboard();
+    </script>
+</body>
+</html>
