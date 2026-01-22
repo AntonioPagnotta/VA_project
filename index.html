@@ -831,7 +831,7 @@
         
         // Variable configuration for axes and bubble size
         let bubbleXVar = 'BIRTHRATE';
-        let bubbleYVar = 'LIFEEXP0T';
+        let bubbleYVar = 'AGEINDEX';
         let bubbleSizeVar = 'DEATHRATE';
         
         // Trail tracking for temporal mode
@@ -1183,10 +1183,61 @@
         }
         
         /**
-         * Calculate bubble radius
+         * Round a number UP to the nearest "nice" round number for axis labels
+         * Examples: 9.7 → 10, 314.4 → 350, 487 → 500, 1234 → 1500
          */
-        function calculateBubbleRadius(sizeValue, minSize = 5, maxSize = 18) {
-            return Math.sqrt(Math.abs(sizeValue)) * 1.5 + minSize;
+        function roundToNiceNumber(rawValue) {
+            if (rawValue <= 0) return 1;
+            
+            // Find the order of magnitude (power of 10)
+            const magnitude = Math.pow(10, Math.floor(Math.log10(rawValue)));
+            
+            // Normalize to range [1, 10)
+            const normalized = rawValue / magnitude;
+            
+            // Choose nice round values: 1, 2, 5, 10
+            let niceFactor;
+            if (normalized <= 1) {
+                niceFactor = 1;
+            } else if (normalized <= 2) {
+                niceFactor = 2;
+            } else if (normalized <= 5) {
+                niceFactor = 5;
+            } else {
+                niceFactor = 10;
+            }
+            
+            // Scale back to original magnitude
+            const niceValue = niceFactor * magnitude;
+            
+            console.log(`   📐 Arrotondamento: ${rawValue.toFixed(2)} → ${niceValue} (magnitude: ${magnitude}, factor: ${niceFactor})`);
+            
+            return niceValue;
+        }
+        
+        /**
+         * Calculate bubble radius with enhanced size variation
+         * Uses normalized scale to make size differences more visible
+         */
+        function calculateBubbleRadius(sizeValue, minSize = 4, maxSize = 15) {
+            if (!globalScales[bubbleSizeVar]) {
+                return minSize;
+            }
+            
+            const scale = globalScales[bubbleSizeVar];
+            const range = scale.max - scale.min;
+            
+            if (range === 0) return minSize;
+            
+            // Normalize value to 0-1 range
+            const normalized = (Math.abs(sizeValue) - scale.min) / range;
+            
+            // Apply exponential scaling for better visual distinction
+            // Using power of 1.5 to emphasize differences
+            const scaledSize = Math.pow(normalized, 1.5);
+            
+            // Map to radius range
+            return minSize + (scaledSize * (maxSize - minSize));
         }
         
         /**
@@ -1198,8 +1249,13 @@
             if (!currentYearlyData) return null;
             
             currentYearlyData.forEach(row => {
-                if (row.region === regionName) {
-                    values[row.data_type] = row.value;
+                // Support both lowercase and uppercase field names
+                const rowRegion = row.region || row.REGION;
+                const rowDataType = row.data_type || row.DATA_TYPE;
+                const rowValue = row.value || row.VALUE;
+                
+                if (rowRegion === regionName) {
+                    values[rowDataType] = rowValue;
                 }
             });
             
@@ -1472,82 +1528,48 @@
         }
         
         /**
-         * Calculate dynamic axis ranges based on current mode and selection
+         * Calculate FIXED axis ranges based on GLOBAL data (all years)
+         * RULE 1: Minimum always starts at 0
+         * RULE 2: Maximum = Global_Max * 1.15 (calculated once on all years)
+         * RULE 3: These ranges NEVER change when scrolling timeline
          */
         function calculateDynamicAxisRanges() {
-            const hasSelection = selectedRegionNames.length > 0;
-            const regionsToConsider = hasSelection ? selectedRegionNames : Object.keys(regionCoords);
+            console.log(`📊 Calculating FIXED axis ranges - Variables: X=${bubbleXVar}, Y=${bubbleYVar}`);
             
-            console.log(`📊 Calculating axis ranges - Mode: ${isOverviewMode ? 'OVERVIEW' : 'TEMPORAL'}, Selection: ${hasSelection ? regionsToConsider.length + ' regions' : 'ALL'}`);
-            
-            let xValues = [];
-            let yValues = [];
-            
-            const forceOverview = !isOverviewMode && bubbleForceOverviewInTemporal;
-
-            if (isOverviewMode || forceOverview) {
-                // OVERVIEW MODE: use only current year data for selected/all regions
-                console.log('📌 Overview mode: using current year data only', forceOverview ? '(FORCED while temporal)' : '');
-                regionsToConsider.forEach(region => {
-                    currentYearlyData.forEach(row => {
-                        if (row.region === region) {
-                            if (row.data_type === bubbleXVar) xValues.push(row.value);
-                            if (row.data_type === bubbleYVar) yValues.push(row.value);
-                        }
-                    });
-                });
-            } else {
-                // TEMPORAL MODE: use all years for selected/all regions
-                console.log('📌 Temporal mode: calculating from ALL years and regions');
-                
-                // Collect all years from cache
-                const cachedYears = Object.keys(allYearsDataCache).map(y => parseInt(y)).sort((a, b) => a - b);
-                console.log(`📅 Using ${cachedYears.length} cached years: ${cachedYears.length > 0 ? cachedYears[0] + ' to ' + cachedYears[cachedYears.length - 1] : 'none'}`);
-                
-                if (cachedYears.length > 0) {
-                    // For each cached year, extract X and Y values for the regions to consider
-                    cachedYears.forEach(year => {
-                        const yearData = allYearsDataCache[year];
-                        if (!yearData || !Array.isArray(yearData)) return;
-                        
-                        // Iterate through all rows in this year's data
-                        yearData.forEach(row => {
-                            // Check if this row belongs to a region we care about
-                            if (regionsToConsider.includes(row.region)) {
-                                // Collect X values
-                                if (row.data_type === bubbleXVar && row.value !== null && row.value !== undefined) {
-                                    xValues.push(row.value);
-                                }
-                                // Collect Y values
-                                if (row.data_type === bubbleYVar && row.value !== null && row.value !== undefined) {
-                                    yValues.push(row.value);
-                                }
-                            }
-                        });
-                    });
-                    
-                    console.log(`📊 Collected ${xValues.length} X values (${bubbleXVar}) and ${yValues.length} Y values (${bubbleYVar}) from cache`);
-                    
-                    if (xValues.length > 0) {
-                        console.log(`   X range: ${Math.min(...xValues).toFixed(2)} to ${Math.max(...xValues).toFixed(2)}`);
-                    }
-                    if (yValues.length > 0) {
-                        console.log(`   Y range: ${Math.min(...yValues).toFixed(2)} to ${Math.max(...yValues).toFixed(2)}`);
-                    }
-                } else {
-                    console.warn('⚠️ No cached years available, falling back to global scales');
-                    xValues = [globalScales[bubbleXVar]?.min || 0, globalScales[bubbleXVar]?.max || 1];
-                    yValues = [globalScales[bubbleYVar]?.min || 0, globalScales[bubbleYVar]?.max || 1];
-                }
+            // Verify global scales are available
+            if (!globalScalesCalculated || !globalScales[bubbleXVar] || !globalScales[bubbleYVar]) {
+                console.warn('⚠️ Global scales not ready, returning fallback ranges');
+                return { 
+                    xRange: { min: 0, max: 1 }, 
+                    yRange: { min: 0, max: 1 } 
+                };
             }
             
-            // Calculate ranges with padding for better visualization
-            const xRange = xValues.length > 0 ? calculateAxisRange(xValues, 0.15) : { min: 0, max: 1 };
-            const yRange = yValues.length > 0 ? calculateAxisRange(yValues, 0.15) : { min: 0, max: 1 };
+            // RULE 1: Minimum is ALWAYS 0
+            const xMin = 0;
+            const yMin = 0;
             
-            console.log(`✅ Calculated ranges - X(${bubbleXVar}): [${xRange.min.toFixed(2)}, ${xRange.max.toFixed(2)}], Y(${bubbleYVar}): [${yRange.min.toFixed(2)}, ${yRange.max.toFixed(2)}]`);
+            // RULE 2: Maximum = Global_Max * 1.15 (15% buffer), rounded to nice number
+            const xGlobalMax = globalScales[bubbleXVar].max;
+            const yGlobalMax = globalScales[bubbleYVar].max;
             
-            return { xRange, yRange };
+            // Calculate raw max with buffer
+            const xRawMax = xGlobalMax * 1.15;
+            const yRawMax = yGlobalMax * 1.15;
+            
+            // Round UP to nearest "nice" number (10, 20, 50, 100, 200, 500, etc.)
+            const xMax = roundToNiceNumber(xRawMax);
+            const yMax = roundToNiceNumber(yRawMax);
+            
+            // RULE 3: These values are fixed and don't change with timeline
+            console.log(`✅ FIXED ranges calculated:`);
+            console.log(`   X(${bubbleXVar}): [0 → ${xMax}] (Raw: ${xRawMax.toFixed(2)}, Global Max: ${xGlobalMax.toFixed(2)})`);
+            console.log(`   Y(${bubbleYVar}): [0 → ${yMax}] (Raw: ${yRawMax.toFixed(2)}, Global Max: ${yGlobalMax.toFixed(2)})`);
+            
+            return { 
+                xRange: { min: xMin, max: xMax }, 
+                yRange: { min: yMin, max: yMax } 
+            };
         }
         
         /**
@@ -1594,13 +1616,25 @@
                 
                 const { x: xVal, y: yVal, size: sizeVal } = regionData;
                 
+                // Skip bubbles with Y <= 0.01 (anomalous values near zero)
+                if (yVal <= 0.01) {
+                    console.log(`⚠️ Skipping ${region}: Y value too small (${yVal})`);
+                    return;
+                }
+                
                 const regionIdx = currentClustering.regions.indexOf(region);
                 const clusterId = regionIdx >= 0 ? currentClustering.clusters[regionIdx] : 0;
                 
                 // Use cluster color for bubble
                 const fillColor = clusterColors[clusterId % clusterColors.length];
                 const isClicked = clickedBubbleRegions.includes(region);
-                const opacity = (clickedBubbleRegions.length === 0 || isClicked) ? 1.0 : 0.3;
+                
+                // STATO NORMALE: Opacità 0.65 per effetto "lente colorata"
+                // STATO CLICK: Se ci sono selezioni e questa NON è selezionata, dimming a 0.1
+                const baseOpacity = 0.65;  // "Vetrino" effect
+                const dimmingOpacity = 0.1;  // Spotlight dimming
+                const opacity = (clickedBubbleRegions.length === 0 || isClicked) ? baseOpacity : dimmingOpacity;
+                
                 const radius = calculateBubbleRadius(sizeVal);
                 
                 datasets.push({
@@ -1611,26 +1645,36 @@
                         r: radius
                     }],
                     backgroundColor: hexToRgba(fillColor, opacity),
-                    borderColor: fillColor,
-                    borderWidth: isClicked ? 4 : 3,
-                    hoverBorderWidth: 5,
-                    hoverBorderColor: '#2c3e50',
+                    borderColor: '#333333',  // Bordo NERO per tutte le bolle (non il colore della bolla)
+                    borderWidth: isClicked ? 2 : 1,  // 2px quando cliccata, 1px normale
+                    hoverBorderWidth: 2,  // Bordo più marcato in hover
+                    hoverBorderColor: '#000000',  // Nero pieno in hover
+                    hoverBackgroundColor: hexToRgba(fillColor, 1.0),  // Opacità piena in hover (Spotlight)
                     // Ensure Chart.js renders the bubble radius even when not hovered
                     pointRadius: radius,
-                    pointHoverRadius: Math.max(radius * 1.2, radius + 2),
+                    pointHoverRadius: radius,  // NO size increase on hover
                     regionName: region,
-                    clip: false
+                    clip: true  // CLIP bubbles that exceed axis bounds
                 });
                 
                 // Show trail if we have trail data, regardless of current mode
                 if (isClicked && bubbleTrails[region]?.length > 0) {
                     const trail = bubbleTrails[region];
                     
-                    const trailPoints = trail.map(point => ({
-                        x: point.x,
-                        y: point.y,
-                        r: calculateBubbleRadius(point.size) * 0.6
-                    }));
+                    // Filter trail points to exclude null values or X <= 0 or Y <= 0
+                    // Use REAL bubble size for each year (no reduction)
+                    const trailPoints = trail
+                        .filter(point => {
+                            const xValid = point.x != null && point.x > 0;
+                            const yValid = point.y != null && point.y > 0;
+                            const sizeValid = point.size != null;
+                            return xValid && yValid && sizeValid;
+                        })
+                        .map(point => ({
+                            x: point.x,
+                            y: point.y,
+                            r: calculateBubbleRadius(point.size) * 0.5  // 50% del raggio originale
+                        }));
                     
                     // Draw a connecting line between historical trail points using a line dataset
                     datasets.push({
@@ -1638,14 +1682,14 @@
                         label: `${region} Trail Line`,
                         data: trailPoints,
                         backgroundColor: 'transparent',
-                        borderColor: hexToRgba(fillColor, 0.8),
-                        borderWidth: 2,
+                        borderColor: hexToRgba(fillColor, 0.5),  // Linea più sottile e trasparente
+                        borderWidth: 1.5,  // Più sottile
                         pointRadius: 0,
                         showLine: true,
                         fill: false,
                         tension: 0.25,
                         borderDash: [],  // Solid line
-                        clip: false,
+                        clip: true,  // CLIP trails that exceed axis bounds
                         // draw the line under bubbles by giving a lower order
                         order: 1
                     });
@@ -1655,20 +1699,20 @@
                         type: 'bubble',
                         label: `${region} Trail Points`,
                         data: trailPoints,
-                        backgroundColor: hexToRgba(fillColor, 0.35),
-                        borderColor: hexToRgba(fillColor, 0.65),
-                        borderWidth: 1,
+                        backgroundColor: hexToRgba(fillColor, 0.6),  // Opacità 0.6 per trail
+                        borderColor: '#333333',  // Bordo nero come le bolle principali
+                        borderWidth: 1,  // Bordo sottile 1px
                         // Use per-point radii from `trailPoints[].r` so trail markers are visible
                         pointRadius: trailPoints.map(p => p.r),
-                        pointHoverRadius: trailPoints.map(p => Math.max(p.r * 1.2, p.r + 1)),
+                        pointHoverRadius: trailPoints.map(p => p.r),
                         showLine: false,
-                        clip: false,
+                        clip: true,  // CLIP trails that exceed axis bounds
                         order: 2
                     });
                 }
             });
             
-            // Calculate dynamic axis ranges based on current mode and selection
+            // Calculate FIXED axis ranges (ALWAYS 0 to Global_Max * 1.15)
             const { xRange, yRange } = calculateDynamicAxisRanges();
             const isLogX = document.getElementById('bubble-log-scale-x')?.checked || false;
             const isLogY = document.getElementById('bubble-log-scale-y')?.checked || false;
@@ -1677,26 +1721,41 @@
             bubbleChart.options.scales.x.type = isLogX ? 'logarithmic' : 'linear';
             bubbleChart.options.scales.y.type = isLogY ? 'logarithmic' : 'linear';
             
-            // Apply calculated ranges to axes
+            // Apply FIXED ranges to axes
+            // IMPORTANT: Ranges are calculated once and DON'T change with timeline
             // For logarithmic scale, ensure min is positive (at least 0.1)
-            // For linear scale, use the calculated min directly
-            const xMin = isLogX ? Math.max(0.1, xRange.min) : xRange.min;
-            const yMin = isLogY ? Math.max(0.1, yRange.min) : yRange.min;
-            const xMax = xRange.max;
-            const yMax = yRange.max;
+            // For linear scale, min is ALWAYS 0 (xRange.min and yRange.min are 0)
+            const xMin = isLogX ? Math.max(0.1, xRange.min) : 0;  // Force 0 for linear
+            const yMin = isLogY ? Math.max(0.1, yRange.min) : 0;  // Force 0 for linear
+            const xMax = xRange.max;  // Global_Max * 1.15
+            const yMax = yRange.max;  // Global_Max * 1.15
             
-            // Set axis limits
+            // Set axis limits (FIXED, won't change when scrolling timeline)
             bubbleChart.options.scales.x.min = xMin;
             bubbleChart.options.scales.x.max = xMax;
             bubbleChart.options.scales.y.min = yMin;
             bubbleChart.options.scales.y.max = yMax;
             
-            // Disable auto-scaling to respect our calculated ranges
-            bubbleChart.options.scales.x.beginAtZero = false;
-            bubbleChart.options.scales.y.beginAtZero = false;
+            // CRITICAL: Disable ALL auto-scaling to prevent Chart.js from recalculating ranges
+            bubbleChart.options.scales.x.beginAtZero = !isLogX;  // true for linear, false for log
+            bubbleChart.options.scales.y.beginAtZero = !isLogY;  // true for linear, false for log
             
-            console.log(`🔒 ASSI AGGIORNATI: X(${bubbleXVar})[${xMin.toFixed(2)} → ${xMax.toFixed(2)}], Y(${bubbleYVar})[${yMin.toFixed(2)} → ${yMax.toFixed(2)}]`);
-            console.log(`   Raw ranges before log adjustment: X[${xRange.min.toFixed(2)} → ${xRange.max.toFixed(2)}], Y[${yRange.min.toFixed(2)} → ${yRange.max.toFixed(2)}]`);
+            // Force suggestedMin/Max to match min/max exactly
+            bubbleChart.options.scales.x.suggestedMin = xMin;
+            bubbleChart.options.scales.x.suggestedMax = xMax;
+            bubbleChart.options.scales.y.suggestedMin = yMin;
+            bubbleChart.options.scales.y.suggestedMax = yMax;
+            
+            // Disable grace (automatic padding)
+            bubbleChart.options.scales.x.grace = 0;
+            bubbleChart.options.scales.y.grace = 0;
+            
+            // Lock the scales completely
+            bubbleChart.options.scales.x.bounds = 'data';
+            bubbleChart.options.scales.y.bounds = 'data';
+            
+            console.log(`🔒 ASSI FISSI APPLICATI: X(${bubbleXVar})[${xMin.toFixed(2)} → ${xMax.toFixed(2)}], Y(${bubbleYVar})[${yMin.toFixed(2)} → ${yMax.toFixed(2)}]`);
+            console.log(`   ⚠️ Questi valori NON cambieranno quando si scorre la timeline!`);
             
             bubbleChart.data.datasets = datasets;
             
@@ -2130,6 +2189,13 @@
                     bubbleTrails[clickedRegion] = [];
                 }
                 
+                // Check if this year already exists in the trail to avoid duplicates
+                const existingPoint = bubbleTrails[clickedRegion].find(p => p.year === year);
+                if (existingPoint) {
+                    console.log(`⏭️ Skipping duplicate trail point for ${clickedRegion}, year ${year}`);
+                    return;
+                }
+                
                 const regionData = getRegionBubbleData(clickedRegion);
                 if (!regionData) return;
                 
@@ -2168,19 +2234,44 @@
             console.log(`📅 Found ${years.length} cached years:`, years.length > 0 ? `${years[0]} to ${years[years.length-1]}` : 'none');
             
             if (years.length > 0) {
+                // DEBUG: Check first year to see data structure
+                const firstYearData = allYearsDataCache[years[0]];
+                if (firstYearData && firstYearData.length > 0) {
+                    console.log(`🔍 DEBUG - Sample data structure:`, firstYearData[0]);
+                    const availableRegions = [...new Set(firstYearData.map(r => r.region || r.REGION))];
+                    console.log(`🔍 DEBUG - Available regions in data:`, availableRegions.slice(0, 5));
+                    console.log(`🔍 DEBUG - Looking for region: "${regionName}"`);
+                }
+                
                 years.forEach(year => {
                     const yearData = allYearsDataCache[year];
                     if (!Array.isArray(yearData)) return;
-                    const xRow = yearData.find(r => r.region === regionName && r.data_type === bubbleXVar);
-                    const yRow = yearData.find(r => r.region === regionName && r.data_type === bubbleYVar);
-                    const sRow = yearData.find(r => r.region === regionName && r.data_type === bubbleSizeVar);
+                    
+                    // Try both lowercase and uppercase field names
+                    const xRow = yearData.find(r => (r.region === regionName || r.REGION === regionName) && (r.data_type === bubbleXVar || r.DATA_TYPE === bubbleXVar));
+                    const yRow = yearData.find(r => (r.region === regionName || r.REGION === regionName) && (r.data_type === bubbleYVar || r.DATA_TYPE === bubbleYVar));
+                    const sRow = yearData.find(r => (r.region === regionName || r.REGION === regionName) && (r.data_type === bubbleSizeVar || r.DATA_TYPE === bubbleSizeVar));
+                    
                     if (xRow && yRow) {
-                        bubbleTrails[regionName].push({
-                            x: xRow.value,
-                            y: yRow.value,
-                            size: sRow ? sRow.value : 0,
-                            year: year
-                        });
+                        const xValue = xRow.value || xRow.VALUE;
+                        const yValue = yRow.value || yRow.VALUE;
+                        const sizeValue = sRow ? (sRow.value || sRow.VALUE) : 0;
+                        
+                        // Skip if null or <= 0
+                        if (xValue != null && xValue > 0 && yValue != null && yValue > 0 && sizeValue != null) {
+                            bubbleTrails[regionName].push({
+                                x: xValue,
+                                y: yValue,
+                                size: sizeValue,
+                                year: year
+                            });
+                        } else {
+                            console.log(`⚠️ Year ${year}: Invalid values (X=${xValue}, Y=${yValue}, Size=${sizeValue}) for ${regionName}`);
+                        }
+                    } else {
+                        // DEBUG: Log why this year was skipped
+                        if (!xRow) console.log(`⚠️ Year ${year}: Missing X data (${bubbleXVar}) for ${regionName}`);
+                        if (!yRow) console.log(`⚠️ Year ${year}: Missing Y data (${bubbleYVar}) for ${regionName}`);
                     }
                 });
                 console.log(`✅ Trail built with ${bubbleTrails[regionName].length} points from cache`);
@@ -2874,10 +2965,27 @@
         }
 
         function onTimelineChange() {
-            if (!timeseriesData) return;
+            // Check if we have timeline data loaded
+            if (!timeseriesData || timeseriesData.length === 0) {
+                console.log('⚠️ Timeline data not loaded yet - switching to temporal mode first');
+                // Switch to temporal mode and load data
+                isOverviewMode = false;
+                setYearDisplayVisibility();
+                loadClusteringData();
+                return;
+            }
             
             pauseAnimation();
             currentTimeIndex = parseInt(document.getElementById('timeline-slider').value);
+            
+            // Ensure index is within bounds
+            if (currentTimeIndex >= timeseriesData.length) {
+                currentTimeIndex = timeseriesData.length - 1;
+            }
+            if (currentTimeIndex < 0) {
+                currentTimeIndex = 0;
+            }
+            
             updateClusterChart(timeseriesData[currentTimeIndex]);
             loadYearlyData(timeseriesData[currentTimeIndex].year);
             updateYearDisplay();
