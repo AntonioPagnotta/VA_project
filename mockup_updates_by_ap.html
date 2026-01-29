@@ -412,7 +412,7 @@
         <div class="col">
             <div class="card map-wrapper">
                 <div class="card-header">
-                    <span style="font-weight: 700; letter-spacing: 0.3px;">🗺️ Geospatial Distribution</span>
+                    <span style="font-weight: 700; letter-spacing: 0.3px;">Geospatial Distribution</span>
                     <div style="display: flex; align-items: center; gap: 5px;">
                         <label style="font-size: 0.65rem; font-weight: normal;">Variable:</label>
                         <select id="map-variable-select" class="mini-select" onchange="updateMapVariable()">
@@ -457,10 +457,10 @@
                                 <div style="display: flex; align-items: center; gap: 6px; margin-left: 8px;">
                                     <label style="font-size: 0.65rem; font-weight: 600; color: #7f8c8d;">Speed:</label>
                                     <select id="speed-select" class="mini-select" style="min-width: 85px;">
-                                        <option value="6000">🐌 Slow</option>
-                                        <option value="3000" selected>⚡ Normal</option>
-                                        <option value="1200">🚀 Fast</option>
-                                        <option value="400">💨 Ultra</option>
+                                        <option value="6000">Slow</option>
+                                        <option value="3000" selected>Normal</option>
+                                        <option value="1200">Fast</option>
+                                        <option value="400">Ultra</option>
                                     </select>
                                 </div>
                                 <span class="year-display" id="year-display" style="margin-left: auto;">2022</span>
@@ -480,7 +480,7 @@
         <div class="col">
             <div class="card bubble-wrapper" style="overflow: hidden;">
                 <div class="card-header">
-                    <span>💹 Bubble Chart - Variable Comparison</span>
+                    <span>Bubble Chart - Variable Comparison</span>
                     <div style="display: flex; gap: 6px; align-items: center; font-size: 0.65rem;">
                         <label>X:</label>
                         <select id="bubble-x-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
@@ -507,9 +507,9 @@
             <div class="card stats-wrapper">
                 <div class="card-header" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); flex-direction: column; align-items: flex-start; gap: 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <span style="font-weight: 700; letter-spacing: 0.3px;">📈 Top K Diverse Variables</span>
+                        <span style="font-weight: 700; letter-spacing: 0.3px;">Top K Diverse Variables</span>
                         <button class="btn-mini" id="manual-mode-btn" onclick="toggleManualModeButton()" style="font-size: 0.65rem; padding: 4px 10px;">
-                            <span id="manual-mode-icon">📝</span> <span id="manual-mode-text">Manual</span>
+                            <span id="manual-mode-icon"></span> <span id="manual-mode-text">Manual</span>
                         </button>
                     </div>
                     <div style="font-size:0.65rem; color:#6b7280; margin-top:6px; max-width:100%; line-height:1.2;">
@@ -1199,43 +1199,56 @@
         // BUBBLE CHART EVENT HANDLERS
         // ============================================
 
-        /**
+/**
          * Handle bubble click events
+         * UPDATED: Syncs with global selection to update Map, PCA, and Table
          */
         function handleBubbleClick(event, elements) {
-            const isTemporalMode = true; // Always in temporal mode
-
             if (elements.length > 0) {
                 const datasetIndex = elements[0].datasetIndex;
                 const dataset = bubbleChart.data.datasets[datasetIndex];
 
+                // Guard: Ensure we clicked a main region bubble (not a trail line/point)
                 if (!dataset.regionName) return;
 
                 const region = dataset.regionName;
 
-                // Check if we have cached data for trails (either in temporal mode or after animation played)
-                const hasCachedData = Object.keys(allYearsDataCache).length > 0;
-
-                if (isTemporalMode || hasCachedData) {
-                    const index = clickedBubbleRegions.indexOf(region);
-                    if (index >= 0) {
-                        clickedBubbleRegions.splice(index, 1);
-                        console.log('Trail hidden:', region);
-                    } else {
-                        clickedBubbleRegions.push(region);
-                        console.log('Trail shown:', region);
-                        // Build full historical trail for this region up to current year
-                        buildFullTrailForRegion(region);
-                    }
-                    updateBubbleChart();
+                // --- 1. Update Global Selection (Syncs with Map & PCA) ---
+                const selIndex = selectedRegionNames.indexOf(region);
+                if (selIndex >= 0) {
+                    selectedRegionNames.splice(selIndex, 1); // Deselect if already selected
                 } else {
-                    console.log('Clicked region:', region, '(no trail data - play animation first)');
+                    selectedRegionNames.push(region); // Select if not present
                 }
+
+                // --- 2. Update Bubble Trails (Keep existing visual history logic) ---
+                // We sync the trails with the selection so selected regions show their history path
+                const trailIndex = clickedBubbleRegions.indexOf(region);
+                if (trailIndex >= 0) {
+                    clickedBubbleRegions.splice(trailIndex, 1);
+                } else {
+                    clickedBubbleRegions.push(region);
+                    // Ensure trail data is built for this region
+                    buildFullTrailForRegion(region);
+                }
+
+                console.log(`Bubble Click: Toggled ${region}. Total Selected: ${selectedRegionNames.length}`);
+
+                // --- 3. Trigger Global Updates ---
+                // This function updates the Cluster Chart styling, Map styling,
+                // and internally calls updateLinkedViews() to redraw the Bubble Chart
+                updateSelectionHighlight();
+
             } else {
-                if (clickedBubbleRegions.length > 0) {
+                // --- 4. Background Click ---
+                // If the user clicks on empty space, clear all selections
+                if (selectedRegionNames.length > 0 || clickedBubbleRegions.length > 0) {
+                    selectedRegionNames = [];
                     clickedBubbleRegions = [];
-                    console.log('All trails cleared');
-                    updateBubbleChart();
+                    console.log('Selections cleared via Bubble Chart background click');
+
+                    // Refresh all views to remove highlights
+                    updateSelectionHighlight();
                 }
             }
         }
