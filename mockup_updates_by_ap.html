@@ -1147,9 +1147,14 @@
 
             const xVal = values[bubbleXVar];
             const yVal = values[bubbleYVar];
-            const sizeVal = values[bubbleSizeVar];
 
-            if (xVal === undefined || yVal === undefined || sizeVal === undefined) {
+            // Handle "none" size variable
+            let sizeVal = 0;
+            if (bubbleSizeVar !== 'none') {
+                sizeVal = values[bubbleSizeVar];
+            }
+
+            if (xVal === undefined || yVal === undefined || (bubbleSizeVar !== 'none' && sizeVal === undefined)) {
                 return null;
             }
 
@@ -3788,46 +3793,70 @@
             populateBubbleDropdowns(variables);
         }
 
+        /**
+         * UPDATED: Populates bubble chart dropdowns and adds "None" option for Size
+         */
         function populateBubbleDropdowns(variables) {
-            console.log('populateBubbleDropdowns called with', variables.length, 'variables');
-            const xSelect = document.getElementById('bubble-x-select');
-            const ySelect = document.getElementById('bubble-y-select');
-            const sizeSelect = document.getElementById('bubble-size-select');
+    console.log('populateBubbleDropdowns called with', variables.length, 'variables');
+    const xSelect = document.getElementById('bubble-x-select');
+    const ySelect = document.getElementById('bubble-y-select');
+    const sizeSelect = document.getElementById('bubble-size-select');
 
-            console.log('Dropdown elements:', { xSelect: !!xSelect, ySelect: !!ySelect, sizeSelect: !!sizeSelect });
+    if (!xSelect || !ySelect || !sizeSelect) {
+        console.error('Dropdown elements not found!');
+        return;
+    }
 
-            if (!xSelect || !ySelect || !sizeSelect) {
-                console.error('Dropdown elements not found!');
-                return;
-            }
+    // Store current values
+    const currentX = xSelect.value || bubbleXVar;
+    const currentY = ySelect.value || bubbleYVar;
+    const currentSize = sizeSelect.value || bubbleSizeVar;
 
-            // Store current values
-            const currentX = xSelect.value || bubbleXVar;
-            const currentY = ySelect.value || bubbleYVar;
-            const currentSize = sizeSelect.value || bubbleSizeVar;
+    // 1. Populate X and Y (Standard)
+    [xSelect, ySelect].forEach(select => {
+        select.innerHTML = '';
+        variables.forEach(variable => {
+            const displayName = indicatorNames[variable] || variable;
+            const option = document.createElement('option');
+            option.value = variable;
+            option.textContent = displayName;
+            select.appendChild(option);
+        });
+    });
 
-            // Populate all three dropdowns
-            [xSelect, ySelect, sizeSelect].forEach(select => {
-                select.innerHTML = '';
-                variables.forEach(variable => {
-                    const displayName = indicatorNames[variable] || variable;
-                    const option = document.createElement('option');
-                    option.value = variable;
-                    option.textContent = displayName;
-                    select.appendChild(option);
-                });
-            });
+    // 2. Populate Size (Add "None" option)
+    sizeSelect.innerHTML = '';
 
-            // Set default or restore previous values
-            xSelect.value = variables.includes(currentX) ? currentX : (variables.includes('BIRTHRATE') ? 'BIRTHRATE' : variables[0]);
-            ySelect.value = variables.includes(currentY) ? currentY : (variables.includes('LIFEEXP0T') ? 'LIFEEXP0T' : variables[0]);
-            sizeSelect.value = variables.includes(currentSize) ? currentSize : (variables.includes('DEATHRATE') ? 'DEATHRATE' : variables[0]);
+    // Add "None" Option
+    const noneOption = document.createElement('option');
+    noneOption.value = 'none';
+    noneOption.textContent = 'None';
+    sizeSelect.appendChild(noneOption);
 
-            // Update state variables
-            bubbleXVar = xSelect.value;
-            bubbleYVar = ySelect.value;
-            bubbleSizeVar = sizeSelect.value;
-        }
+    variables.forEach(variable => {
+        const displayName = indicatorNames[variable] || variable;
+        const option = document.createElement('option');
+        option.value = variable;
+        option.textContent = displayName;
+        sizeSelect.appendChild(option);
+    });
+
+    // Set default or restore previous values
+    xSelect.value = variables.includes(currentX) ? currentX : (variables.includes('BIRTHRATE') ? 'BIRTHRATE' : variables[0]);
+    ySelect.value = variables.includes(currentY) ? currentY : (variables.includes('LIFEEXP0T') ? 'LIFEEXP0T' : variables[0]);
+
+    // Handle Size selection specifically
+    if (currentSize === 'none') {
+        sizeSelect.value = 'none';
+    } else {
+        sizeSelect.value = variables.includes(currentSize) ? currentSize : (variables.includes('DEATHRATE') ? 'DEATHRATE' : variables[0]);
+    }
+
+    // Update state variables
+    bubbleXVar = xSelect.value;
+    bubbleYVar = ySelect.value;
+    bubbleSizeVar = sizeSelect.value;
+}
 
         // Initial load - IMPORTANT: Load GeoJSON FIRST, then clustering data
         // This ensures the map regions exist before we try to color them
