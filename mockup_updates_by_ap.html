@@ -482,6 +482,10 @@
                 <div class="card-header">
                     <span>Bubble Chart - Variable Comparison</span>
                     <div style="display: flex; gap: 6px; align-items: center; font-size: 0.65rem;">
+                        <div class="scale-toggle" style="margin-right: 4px; padding-right: 6px; border-right: 1px solid #ddd;">
+                            <input type="checkbox" id="bubble-fix-zero" onclick="window.toggleBubbleAxesFixed()">
+                            <label for="bubble-fix-zero" style="cursor:pointer; color:#555;">Fix 0-Max</label>
+                        </div>
                         <label>X:</label>
                         <select id="bubble-x-select" class="mini-select" onchange="onBubbleVariableChange()"></select>
                         <label>Y:</label>
@@ -492,15 +496,19 @@
                 </div>
                 <div class="chart-container">
                     <canvas id="bubbleChart"></canvas>
-                    <div class="bubble-controls-overlay">
-                        <div class="zoom-controls">
-                            <button class="control-btn" onclick="resetBubbleZoom()" title="Reset">⟲</button>
-                            <button class="control-btn" onclick="bubbleZoomIn()" title="Zoom In">+</button>
-                            <button class="control-btn" onclick="bubbleZoomOut()" title="Zoom Out">−</button>
-                            <button class="control-btn" onclick="clearTrails()" title="Clear Trails">✖</button>
-                        </div>
-                        <!-- Log-scale controls removed: bubble chart uses linear axes only -->
-                    </div>
+                        <div class="bubble-controls-overlay">
+                            <div class="zoom-controls">
+                                <button class="control-btn" onclick="resetBubbleZoom()" title="Reset">⟲</button>
+                                <button class="control-btn" onclick="bubbleZoomIn()" title="Zoom In">+</button>
+                                <button class="control-btn" onclick="bubbleZoomOut()" title="Zoom Out">−</button>
+                                <button class="control-btn" onclick="clearTrails()" title="Clear Trails">✖</button>
+                            </div>
+
+                            <div style="margin-left: 8px; padding-left: 8px; border-left: 1px solid #ccc; display: flex; flex-direction: column; justify-content: center; font-size: 0.6rem; line-height: 1.1; color: #555;">
+                                <div title="Pearson Correlation (All Regions)">All: <span id="corr-all" style="font-weight:bold; color:#2c3e50;">--</span></div>
+                                <div title="Pearson Correlation (Selected Regions)">Sel: <span id="corr-sel" style="font-weight:bold; color:#e74c3c;">--</span></div>
+                            </div>
+                            </div>
                 </div>
             </div>
 
@@ -550,6 +558,33 @@
     <script>
         // Server configuration
         const SERVER_BASE = 'http://127.0.0.1:5000';
+
+        // --- 1. INSERT THIS GLOBAL VARIABLE & FUNCTION HERE ---
+
+    // Global state for axis fixing
+    var bubbleFixAxesZero = false;
+
+    // Global toggle function attached to window to ensure HTML can find it
+    window.toggleBubbleAxesFixed = function() {
+        const checkbox = document.getElementById('bubble-fix-zero');
+        if (!checkbox) return;
+
+        // 1. Update State
+        bubbleFixAxesZero = checkbox.checked;
+        console.log("👉 Fix Axis Toggled. New State:", bubbleFixAxesZero);
+
+        // 2. Reset Zoom (Required to unlock scales)
+        if (window.bubbleChart) {
+            window.bubbleChart.resetZoom();
+        }
+
+        // 3. Force Update
+        if (typeof updateBubbleChart === 'function') {
+            updateBubbleChart();
+        } else {
+            console.error("❌ updateBubbleChart function not found!");
+        }
+    };
 
         /**
          * Generates Line and Point datasets for historical trails
@@ -1513,6 +1548,7 @@
     bubbleChart.options.scales.x.max = xRange.max;
     bubbleChart.options.scales.y.min = yRange.min;
     bubbleChart.options.scales.y.max = yRange.max;
+    bubbleChart.update();
 
     // 6. Sync Datasets to Chart
     for (let i = bubbleChart.data.datasets.length - 1; i >= 0; i--) {
@@ -1547,6 +1583,82 @@
 
     updateBubbleAxisLabels();
     bubbleChart.update();
+    updateCorrelationDisplay();
+}
+
+/**
+ * 1. Helper: Calculate Pearson Correlation Coefficient
+ */
+function calculatePearsonCorrelation(x, y) {
+    const n = x.length;
+    if (n < 2) return null;
+
+    const sumX = x.reduce((a, b) => a + b, 0);
+    const sumY = y.reduce((a, b) => a + b, 0);
+    const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+    const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+    const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+
+    const numerator = (n * sumXY) - (sumX * sumY);
+    const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+
+    if (denominator === 0) return 0;
+    return numerator / denominator;
+}
+
+/**
+ * 2. Main Logic: Calculate and Update Display
+ */
+function updateCorrelationDisplay() {
+    if (!currentYearlyData) return;
+
+    // Arrays to hold data
+    let allX = [], allY = [];
+    let selX = [], selY = [];
+
+    // Loop through current year data to gather points
+    // We iterate over the regionCoords keys to ensure we only look at valid regions
+    Object.keys(regionCoords).forEach(region => {
+        // Find X and Y rows for this region
+        // Note: currentYearlyData is an array of {region, data_type, value}
+        const rowX = currentYearlyData.find(r => r.region === region && r.data_type === bubbleXVar);
+        const rowY = currentYearlyData.find(r => r.region === region && r.data_type === bubbleYVar);
+
+        if (rowX && rowY && rowX.value !== null && rowY.value !== null) {
+            const valX = parseFloat(rowX.value);
+            const valY = parseFloat(rowY.value);
+
+            // Add to "All" lists
+            allX.push(valX);
+            allY.push(valY);
+
+            // Add to "Selected" lists if applicable
+            if (selectedRegionNames.includes(region)) {
+                selX.push(valX);
+                selY.push(valY);
+            }
+        }
+    });
+
+    // Calculate
+    const corrAll = calculatePearsonCorrelation(allX, allY);
+    const corrSel = calculatePearsonCorrelation(selX, selY);
+
+    // Update DOM
+    const elAll = document.getElementById('corr-all');
+    const elSel = document.getElementById('corr-sel');
+
+    if (elAll) elAll.innerText = corrAll !== null ? corrAll.toFixed(2) : '--';
+
+    if (elSel) {
+        if (selectedRegionNames.length < 2) {
+            elSel.innerText = '--'; // Need at least 2 points
+            elSel.style.color = '#ccc';
+        } else {
+            elSel.innerText = corrSel !== null ? corrSel.toFixed(2) : '--';
+            elSel.style.color = '#e74c3c'; // Active color
+        }
+    }
 }
 
         // ============================================
@@ -1578,85 +1690,101 @@
             updateBubbleChart();
         }
 
+
+        function toggleBubbleAxesFixed() {
+            const checkbox = document.getElementById('bubble-fix-zero');
+            if (checkbox) {
+                // 1. Update the state variable based on checkbox
+                bubbleFixAxesZero = checkbox.checked;
+
+                console.log('Axis mode changed. Fixed to 0-Max?', bubbleFixAxesZero);
+
+                // 2. Reset Zoom (CRITICAL)
+                // If the user is zoomed in, the axes are "locked". We must release them
+                // before we can apply the new 0-Max limits.
+                if (window.bubbleChart) window.bubbleChart.resetZoom();
+
+                // 3. REDRAW THE CHART
+                // This function calls calculateDynamicAxisRanges() internally
+                // and then executes bubbleChart.update().
+                updateBubbleChart();
+            }
+        }
+
+        // ==========================================
+        // 2. REPLACE: Axis Calculation Logic
+        // ==========================================
+
         /**
          * Calculate dynamic axis ranges based on current mode and selection
          */
         function calculateDynamicAxisRanges() {
-            // Always compute axis ranges over ALL regions so axes remain stable
-            // even when some regions are selected/highlighted.
-            const regionsToConsider = Object.keys(regionCoords);
-            const hasSelection = selectedRegionNames.length > 0;
-            console.log(`📊 Calculating axis ranges - Mode: ${isOverviewMode ? 'OVERVIEW' : 'TEMPORAL'}, Selection ignored (using ALL regions). Selected count: ${hasSelection ? selectedRegionNames.length : 0}`);
+    console.log("📊 Calculating Axes. Fix Mode Active?", bubbleFixAxesZero);
 
-            let xValues = [];
-            let yValues = [];
+    // 1. Collect Data (Standard Logic)
+    const regionsToConsider = Object.keys(regionCoords);
+    let xValues = [];
+    let yValues = [];
 
-            const forceOverview = !isOverviewMode && bubbleForceOverviewInTemporal;
+    const forceOverview = !isOverviewMode && bubbleForceOverviewInTemporal;
 
-            if (isOverviewMode || forceOverview) {
-                // OVERVIEW MODE: use only current year data for selected/all regions
-                console.log('📌 Overview mode: using current year data only', forceOverview ? '(FORCED while temporal)' : '');
-                regionsToConsider.forEach(region => {
-                    currentYearlyData.forEach(row => {
-                        if (row.region === region) {
-                            if (row.data_type === bubbleXVar) xValues.push(row.value);
-                            if (row.data_type === bubbleYVar) yValues.push(row.value);
-                        }
-                    });
+    // Determine which data source to use
+    if (isOverviewMode || forceOverview) {
+        // Use current snapshot
+        if (currentYearlyData) {
+            regionsToConsider.forEach(region => {
+                currentYearlyData.forEach(row => {
+                    if (row.region === region) {
+                        if (row.data_type === bubbleXVar) xValues.push(row.value);
+                        if (row.data_type === bubbleYVar) yValues.push(row.value);
+                    }
                 });
-            } else {
-                // TEMPORAL MODE: use all years for selected/all regions
-                console.log('📌 Temporal mode: calculating from ALL years and regions');
-
-                // Collect all years from cache
-                const cachedYears = Object.keys(allYearsDataCache).map(y => parseInt(y)).sort((a, b) => a - b);
-                console.log(`📅 Using ${cachedYears.length} cached years: ${cachedYears.length > 0 ? cachedYears[0] + ' to ' + cachedYears[cachedYears.length - 1] : 'none'}`);
-
-                if (cachedYears.length > 0) {
-                    // For each cached year, extract X and Y values for the regions to consider
-                    cachedYears.forEach(year => {
-                        const yearData = allYearsDataCache[year];
-                        if (!yearData || !Array.isArray(yearData)) return;
-
-                        // Iterate through all rows in this year's data
-                        yearData.forEach(row => {
-                            // Check if this row belongs to a region we care about
-                            if (regionsToConsider.includes(row.region)) {
-                                // Collect X values
-                                if (row.data_type === bubbleXVar && row.value !== null && row.value !== undefined) {
-                                    xValues.push(row.value);
-                                }
-                                // Collect Y values
-                                if (row.data_type === bubbleYVar && row.value !== null && row.value !== undefined) {
-                                    yValues.push(row.value);
-                                }
-                            }
-                        });
-                    });
-
-                    console.log(`📊 Collected ${xValues.length} X values (${bubbleXVar}) and ${yValues.length} Y values (${bubbleYVar}) from cache`);
-
-                    if (xValues.length > 0) {
-                        console.log(`   X range: ${Math.min(...xValues).toFixed(2)} to ${Math.max(...xValues).toFixed(2)}`);
-                    }
-                    if (yValues.length > 0) {
-                        console.log(`   Y range: ${Math.min(...yValues).toFixed(2)} to ${Math.max(...yValues).toFixed(2)}`);
-                    }
-                } else {
-                    console.warn('⚠️ No cached years available, falling back to global scales');
-                    xValues = [globalScales[bubbleXVar]?.min || 0, globalScales[bubbleXVar]?.max || 1];
-                    yValues = [globalScales[bubbleYVar]?.min || 0, globalScales[bubbleYVar]?.max || 1];
-                }
-            }
-
-            // Calculate ranges with padding for better visualization
-            const xRange = xValues.length > 0 ? calculateAxisRange(xValues, 0.15) : { min: 0, max: 1 };
-            const yRange = yValues.length > 0 ? calculateAxisRange(yValues, 0.15) : { min: 0, max: 1 };
-
-            console.log(`✅ Calculated ranges - X(${bubbleXVar}): [${xRange.min.toFixed(2)}, ${xRange.max.toFixed(2)}], Y(${bubbleYVar}): [${yRange.min.toFixed(2)}, ${yRange.max.toFixed(2)}]`);
-
-            return { xRange, yRange };
+            });
         }
+    } else {
+        // Use historical cache
+        const cachedYears = Object.keys(allYearsDataCache).map(y => parseInt(y));
+        cachedYears.forEach(year => {
+            const yearData = allYearsDataCache[year];
+            if (yearData) {
+                yearData.forEach(row => {
+                    if (regionsToConsider.includes(row.region)) {
+                        if (row.data_type === bubbleXVar && row.value !== null) xValues.push(row.value);
+                        if (row.data_type === bubbleYVar && row.value !== null) yValues.push(row.value);
+                    }
+                });
+            }
+        });
+    }
+
+    // Filter invalid values
+    xValues = xValues.filter(v => v !== null && v !== undefined && !isNaN(v));
+    yValues = yValues.filter(v => v !== null && v !== undefined && !isNaN(v));
+
+    let xRange, yRange;
+
+    // 2. Apply Logic based on bubbleFixAxesZero
+    if (bubbleFixAxesZero === true) {
+        // --- FIXED MODE: 0 to Max + Max/4 ---
+        const xMax = xValues.length > 0 ? Math.max(...xValues) : 100;
+        const yMax = yValues.length > 0 ? Math.max(...yValues) : 100;
+
+        // Calculate limit (Max * 1.25)
+        const xLimit = xMax * 1.25;
+        const yLimit = yMax * 1.25;
+
+        xRange = { min: 0, max: xLimit };
+        yRange = { min: 0, max: yLimit };
+
+        console.log(`✅ Axis Fixed: X(0-${xLimit.toFixed(2)}) Y(0-${yLimit.toFixed(2)})`);
+    } else {
+        // --- AUTO MODE ---
+        xRange = xValues.length > 0 ? calculateAxisRange(xValues, 0.15) : { min: 0, max: 100 };
+        yRange = yValues.length > 0 ? calculateAxisRange(yValues, 0.15) : { min: 0, max: 100 };
+    }
+
+    return { xRange, yRange };
+}
 
 
         /**
@@ -3860,16 +3988,35 @@
 
         // Initial load - IMPORTANT: Load GeoJSON FIRST, then clustering data
         // This ensures the map regions exist before we try to color them
+
         async function initializeDashboard() {
             console.log('Initializing dashboard...');
             await loadRegionsGeoJSON();
             console.log('GeoJSON loaded, now loading clustering data...');
             await loadClusteringData();
-            // Ensure year display visibility is correct on initial load (overview by default)
             setYearDisplayVisibility();
-            console.log('Dashboard initialized!');
 
-            // Setup manual mode event listeners
+            // --- INSERT THIS BLOCK ---
+            const fixAxisCheckbox = document.getElementById('bubble-fix-zero');
+            if (fixAxisCheckbox) {
+                fixAxisCheckbox.addEventListener('change', function() {
+                    console.log('Fix 0-Max Clicked. Checked:', this.checked);
+
+                    // 1. Update State
+                    bubbleFixAxesZero = this.checked;
+
+                    // 2. Reset Zoom (Crucial for axes to unlock)
+                    if (window.bubbleChart) window.bubbleChart.resetZoom();
+
+                    // 3. Force Redraw
+                    updateBubbleChart();
+                });
+            } else {
+                console.error('Checkbox bubble-fix-zero not found!');
+            }
+            // --- END BLOCK ---
+
+            console.log('Dashboard initialized!');
             setupManualModeListeners();
         }
 
