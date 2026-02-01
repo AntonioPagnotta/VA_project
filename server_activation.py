@@ -6,7 +6,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-DATASET_FILE = 'combined_indicators_with_healthcare.csv'
+DATASET_FILE = 'dataset.csv'
 main_df = None
 YEAR_LIMIT = 2051
 
