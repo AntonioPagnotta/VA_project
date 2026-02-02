@@ -1,4 +1,4 @@
-# Multivariate Visual Analytics for Italian Regional Demographic and Healthcare Trends
+# Group: 25_14 - Multivariate Visual Analytics for Italian Regional Demographic and Healthcare Trends
 
 **Course:** Visual Analytics 2025/2026 — Sapienza University of Rome  
 **Authors:** A. Pagnotta, F. Trionfetti, M. Sorrentini
