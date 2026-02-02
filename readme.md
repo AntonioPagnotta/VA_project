@@ -2,6 +2,7 @@
 
 **Course:** Visual Analytics 2025/2026 — Sapienza University of Rome  
 **Authors:** A. Pagnotta, F. Trionfetti, M. Sorrentini
+**Group:** 25_14
 
 ![Dashboard Screenshot](https://github.com/AntonioPagnotta/VA_project/blob/main/dashboard.png)
 *An integrated Single-Page Application for exploring high-dimensional demographic data.*
