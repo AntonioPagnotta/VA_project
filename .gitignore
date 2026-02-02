@@ -1,0 +1,16 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# IDEs and Editors
+.idea/
+.vscode/
+.ide
+
+# OS generated files
+.DS_Store
+.ds_store
+
+# Documentation and Temp files
+readme.pdf
+readme_tmp.html

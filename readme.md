@@ -64,7 +64,6 @@ The system uses a modular Client-Server architecture to ensure responsiveness.
 **Frontend**
 * **Framework:** Single Page Application (SPA) with Vanilla JavaScript
 * **Visualizations:** Chart.js (Scatter/Bubble), Leaflet.js (Map)
-* **Design:** CSS Grid, Color Brewer scales for accessibility
 
 ## 🧮 Methodology
 
