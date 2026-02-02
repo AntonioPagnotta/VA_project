@@ -293,19 +293,66 @@
         width: 100%;
         border-collapse: separate;
         border-spacing: 0;
-        font-size: 0.75rem;
+        font-size: 0.68rem;  /* Reduced from 0.75rem */
         font-family: 'Segoe UI', system-ui, sans-serif;
         color: #334155;
     }
 
     /* Header Styling */
     th {
-        background: #f8fafc; color: #475569; font-weight: 700;
-        text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.7rem;
-        padding: 12px 10px; text-align: center;
-        border-bottom: 2px solid #e2e8f0; border-right: 1px solid #f1f5f9;
-        position: sticky; top: 0; z-index: 20;
+        background: #f8fafc;
+        color: #475569;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 0.64rem;  /* Reduced from 0.7rem */
+        padding: 10px 8px;  /* Reduced from 12px 10px */
+        text-align: center;
+        border-bottom: 2px solid #e2e8f0;
+        border-right: 1px solid #f1f5f9;
+        position: sticky;
+        top: 0;
+        z-index: 20;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    /* First Column (Regions/Clusters) Sticky Styling */
+    .col-selected-regions {
+        background-color: #ffffff;
+        font-weight: 600;
+        color: #1e293b;
+        text-align: left;
+        width: 110px;  /* Reduced from 130px */
+        min-width: 110px;  /* Reduced from 130px */
+        border-right: 2px solid #e2e8f0;
+        position: sticky;
+        left: 0;
+        z-index: 10;
+    }
+
+    /* Cell Styling */
+    td {
+        padding: 6px 4px;  /* Reduced from 8px 6px */
+        text-align: center;
+        border-bottom: 1px solid #f1f5f9;
+        border-right: 1px solid #f8fafc;
+        vertical-align: middle;
+    }
+
+    /* Value Box (The white pill with numbers) */
+    .topk-value-box {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0f172a;
+        padding: 3px 6px;  /* Reduced from 4px 8px */
+        border-radius: 5px;  /* Slightly smaller radius */
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+        min-width: 38px;  /* Reduced from 42px */
+        text-align: center;
+        font-weight: 600;
+        font-size: 0.65rem;  /* Reduced from 0.7rem */
+        border: 1px solid rgba(0,0,0,0.04);
+        font-variant-numeric: tabular-nums;
     }
 
     /* First Column (Regions/Clusters) Sticky Styling */
@@ -324,26 +371,6 @@
     /* Row Styling */
     tbody tr { transition: background-color 0.15s ease; }
     tbody tr:hover td { filter: brightness(0.97); }
-
-    /* Cell Styling */
-    td {
-        padding: 8px 6px; text-align: center;
-        border-bottom: 1px solid #f1f5f9; border-right: 1px solid #f8fafc;
-        vertical-align: middle;
-    }
-
-    /* Value Box (The white pill with numbers) */
-    .topk-value-box {
-        display: inline-block;
-        background: rgba(255, 255, 255, 0.92);
-        color: #0f172a;
-        padding: 4px 8px; border-radius: 6px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-        min-width: 42px; text-align: center;
-        font-weight: 600; font-size: 0.7rem;
-        border: 1px solid rgba(0,0,0,0.04);
-        font-variant-numeric: tabular-nums;
-    }
 
     /* "No Data" Styling */
     td span.no-data { color: #94a3b8; font-style: italic; font-weight: 400; }
