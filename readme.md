@@ -16,7 +16,7 @@ This project presents a **Visual Analytics dashboard** that enables the explorat
 * **Multivariate Analysis:** Projects 32 quantitative indicators into interpretable visual structures using PCA.
 * **Visual Triggering Paradigm:** Eliminates complex menus. Algorithms like *Feature Differentiation* are activated via direct interaction (brushing/lasso) on the charts.
 * **Spatiotemporal Exploration:** Navigates historical data and predictive models from **2002 to 2050**.
-* **Predictive Modeling:** Includes future projections generated using a chained **ARIMA/ARIMAX** forecasting architecture.
+* **Predictive Modeling:** Includes future projections generated using a chained **ARIMA** forecasting architecture.
 * **Coordinated Multiple Views (CMV):** Selections propagate instantly across the Map, Bubble Chart, and PCA views using consistent highlighting.
 
 ## ⚙️ Installation and Setup
