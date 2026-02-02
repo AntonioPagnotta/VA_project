@@ -438,8 +438,10 @@ Open <code>index.html</code> in a modern web browser. For the best experience (a
 <li><strong>Computation:</strong> Server calculates the discriminativity score for all 32 variables.</li>
 <li><strong>Result:</strong> The Analytical Table updates to show the Top-K features that distinguish the selection.</li>
 </ol>
-<p><strong>Scoring Formula:</strong><br>
-$$Score = \frac{|\mu_{selected} - \mu_{rest}|}{\sigma_{global}}$$</p>
+<p><strong>Scoring Formula:</strong></p>
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?Score%20%3D%20%5Cfrac%7B%7C%5Cmu_%7Bselected%7D%20-%20%5Cmu_%7Brest%7D%7C%7D%7B%5Csigma_%7Bglobal%7D%7D" alt="Score = (|mean_selected - mean_rest|) / sigma_global">
+</p>
 <h2 id="%F0%9F%9A%80-future-work">🚀 Future Work</h2>
 <ul>
 <li>Expansion to <strong>NUTS-3 (Provincial)</strong> granularity to reveal local disparities.</li>

@@ -64,18 +64,31 @@
         align-items: center;
     }
 
-    /* Bubble chart header controls */
-    .bubble-wrapper .card-header > div {
-        display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-    }
 
-    .bubble-wrapper .card-header label {
-        font-size: 0.62rem; margin: 0 4px; color: #586067;
-    }
+.bubble-wrapper .card-header > div {
+    display: flex;
+    gap: 5px;  /* Reduced gap */
+    align-items: center;
+    flex-wrap: nowrap;
+}
 
-    .bubble-wrapper .card-header .mini-select {
-        padding: 4px 8px; font-size: 0.62rem; min-width: 70px; max-width: 140px; height: 28px; box-sizing: border-box;
-    }
+.bubble-wrapper .card-header label {
+    font-size: 0.6rem;
+    margin: 0 2px;
+    color: #586067;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.bubble-wrapper .card-header .mini-select {
+    padding: 3px 5px;  /* Reduced padding */
+    font-size: 0.58rem;  /* Slightly smaller font */
+    min-width: 65px;  /* Reduced from 75px */
+    max-width: 100px;  /* Reduced from 120px */
+    height: 26px;
+    box-sizing: border-box;
+    flex-shrink: 1;
+}
 
     /* Map legend */
     .map-legend {

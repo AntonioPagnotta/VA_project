@@ -75,7 +75,9 @@ To minimize cognitive load, analytics are triggered by geometry:
 3.  **Result:** The Analytical Table updates to show the Top-K features that distinguish the selection.
 
 **Scoring Formula:**
-$$Score = \frac{|\mu_{selected} - \mu_{rest}|}{\sigma_{global}}$$
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?Score%20%3D%20%5Cfrac%7B%7C%5Cmu_%7Bselected%7D%20-%20%5Cmu_%7Brest%7D%7C%7D%7B%5Csigma_%7Bglobal%7D%7D" alt="Score = (|mean_selected - mean_rest|) / sigma_global" />
+</p>
 
 ## 🚀 Future Work
 * Expansion to **NUTS-3 (Provincial)** granularity to reveal local disparities.
