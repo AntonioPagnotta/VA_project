@@ -3,7 +3,7 @@
 **Course:** Visual Analytics 2025/2026 — Sapienza University of Rome  
 **Authors:** A. Pagnotta, F. Trionfetti, M. Sorrentini
 
-![Dashboard Screenshot](https://via.placeholder.com/1000x500?text=Dashboard+Overview+Placeholder)
+![Dashboard Screenshot](https://github.com/AntonioPagnotta/VA_project/blob/main/dashboard.png)
 *An integrated Single-Page Application for exploring high-dimensional demographic data.*
 
 ## 📋 Abstract
@@ -76,7 +76,7 @@ To minimize cognitive load, analytics are triggered by geometry:
 
 **Scoring Formula:**
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?Score%20%3D%20%5Cfrac%7B%7C%5Cmu_%7Bselected%7D%20-%20%5Cmu_%7Brest%7D%7C%7D%7B%5Csigma_%7Bglobal%7D%7D" alt="Score = (|mean_selected - mean_rest|) / sigma_global" />
+  <img src="https://latex.codecogs.com/svg.latex?%5Ccolor%7Bwhite%7DScore%20%3D%20%5Cfrac%7B%7C%5Cmu_%7Bselected%7D%20-%20%5Cmu_%7Brest%7D%7C%7D%7B%5Csigma_%7Bglobal%7D%7D" alt="Score = (|mean_selected - mean_rest|) / sigma_global" />
 </p>
 
 ## 🚀 Future Work
