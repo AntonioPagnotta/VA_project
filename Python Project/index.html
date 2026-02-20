@@ -2638,13 +2638,23 @@ function updateCorrelationDisplay() {
             pauseAnimation();
             updatePlayPauseButton(false);
             currentTimeIndex = 0;
+
+            // 1. Clear the selected regions array
+            selectedRegionNames = [];
+
+            // 2. Clear bubble trails
             bubbleTrails = {};
-            clickedBubbleRegions = []; 
+            clickedBubbleRegions = [];
+
+            // 3. Reset the timeline and cluster chart to the first year
             if (timeseriesData && timeseriesData.length > 0) {
                 updateClusterChart(timeseriesData[0]);
                 document.getElementById('timeline-slider').value = 0;
                 updateYearDisplay();
             }
+
+            // 4. Force all linked views (Map, Table, Charts) to redraw without selections
+            updateSelectionHighlight();
         }
 
         function onTimelineChange() {
